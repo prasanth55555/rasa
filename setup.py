@@ -25,6 +25,8 @@ tests_requires = [
     "moto~=1.3.8",
 ]
 
+dev_requires = ["pytype==2019.7.11"]
+
 install_requires = [
     "requests~=2.22",
     "boto3~=1.9",
@@ -77,6 +79,7 @@ install_requires = [
 ]
 
 extras_requires = {
+    "dev": dev_requires,
     "test": tests_requires,
     "spacy": ["spacy>=2.1,<2.2"],
     "mitie": ["mitie"],
