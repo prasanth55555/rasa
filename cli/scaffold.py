@@ -36,11 +36,9 @@ def print_train_or_instructions(args: argparse.Namespace, path: Text) -> None:
 
     print_success("Finished creating project structure.")
 
-    should_train = (
-        questionary.confirm("Do you want to train an initial model? 💪🏽")
-        .skip_if(args.no_prompt, default=True)
-        .ask()
-    )
+    should_train = questionary.confirm(
+        "Do you want to train an initial model? 💪🏽"
+    ).skip_if(args.no_prompt, default=True)
 
     if should_train:
         print_success("Training an initial model...")
@@ -83,7 +81,6 @@ def print_run_or_instructions(args: argparse.Namespace, path: Text) -> None:
             "jwt_secret",
             "jwt_method",
             "enable_api",
-            "remote_storage",
         ]
         for a in attributes:
             setattr(args, a, None)
@@ -93,7 +90,7 @@ def print_run_or_instructions(args: argparse.Namespace, path: Text) -> None:
         shell(args)
     else:
         if args.no_prompt:
-            print(
+            print (
                 "If you want to speak to the assistant, "
                 "run 'rasa shell' at any time inside "
                 "the project directory."
@@ -111,7 +108,7 @@ def print_run_or_instructions(args: argparse.Namespace, path: Text) -> None:
 
 def init_project(args: argparse.Namespace, path: Text) -> None:
     create_initial_project(path)
-    print("Created project directory at '{}'.".format(os.path.abspath(path)))
+    print ("Created project directory at '{}'.".format(os.path.abspath(path)))
     print_train_or_instructions(args, path)
 
 
@@ -136,7 +133,7 @@ def _ask_create_path(path: Text) -> None:
     import questionary
 
     should_create = questionary.confirm(
-        f"Path '{path}' does not exist 🧐. Create path?"
+        "Path '{}' does not exist 🧐. Create path?".format(path)
     ).ask()
     if should_create:
         os.makedirs(path)
@@ -160,14 +157,14 @@ def run(args: argparse.Namespace) -> None:
 
     print_success("Welcome to Rasa! 🤖\n")
     if args.no_prompt:
-        print(
+        print (
             "To get started quickly, an "
             "initial project will be created.\n"
             "If you need some help, check out "
             "the documentation at {}.\n".format(DOCS_BASE_URL)
         )
     else:
-        print(
+        print (
             "To get started quickly, an "
             "initial project will be created.\n"
             "If you need some help, check out "
@@ -185,7 +182,7 @@ def run(args: argparse.Namespace) -> None:
         .ask()
     )
 
-    if path and not os.path.isdir(path):
+    if not os.path.isdir(path):
         _ask_create_path(path)
 
     if path is None or not os.path.isdir(path):

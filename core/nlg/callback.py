@@ -9,7 +9,7 @@ from rasa.utils.endpoints import EndpointConfig
 logger = logging.getLogger(__name__)
 
 
-def nlg_response_format_spec() -> Dict[Text, Any]:
+def nlg_response_format_spec():
     """Expected response schema for an NLG endpoint.
 
     Used for validation of the response returned from the NLG endpoint."""
@@ -25,7 +25,7 @@ def nlg_response_format_spec() -> Dict[Text, Any]:
     }
 
 
-def nlg_request_format_spec() -> Dict[Text, Any]:
+def nlg_request_format_spec():
     """Expected request schema for requests sent to an NLG endpoint."""
 
     return {
@@ -53,7 +53,7 @@ def nlg_request_format(
     template_name: Text,
     tracker: DialogueStateTracker,
     output_channel: Text,
-    **kwargs: Any,
+    **kwargs: Any
 ) -> Dict[Text, Any]:
     """Create the json body for the NLG json body for the request."""
 
@@ -84,7 +84,7 @@ class CallbackNaturalLanguageGenerator(NaturalLanguageGenerator):
         template_name: Text,
         tracker: DialogueStateTracker,
         output_channel: Text,
-        **kwargs: Any,
+        **kwargs: Any
     ) -> Dict[Text, Any]:
         """Retrieve a named template from the domain using an endpoint."""
 
@@ -122,8 +122,7 @@ class CallbackNaturalLanguageGenerator(NaturalLanguageGenerator):
             e.message += (
                 ". Failed to validate NLG response from API, make sure your "
                 "response from the NLG endpoint is valid. "
-                "For more information about the format please consult the "
-                "`nlg_response_format_spec` function from this same module: "
-                "https://github.com/RasaHQ/rasa/blob/master/rasa/core/nlg/callback.py#L12"
+                "For more information about the format visit "
+                "https://nlu.rasa.com/..."
             )
             raise e

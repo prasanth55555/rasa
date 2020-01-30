@@ -1,19 +1,20 @@
 import json
 import logging
-import typing
+import warnings
 from difflib import SequenceMatcher
-from typing import List, Text, Tuple
 
 import rasa.cli.utils
 import rasa.utils.io
-from rasa.cli import utils as cli_utils
+import typing
+from typing import List, Text, Tuple
+
+from rasa.cli import utils as cliutils
 from rasa.core.actions.action import ACTION_LISTEN_NAME
 from rasa.core.channels import console
-from rasa.core.channels.channel import CollectingOutputChannel, UserMessage
+from rasa.core.channels.channel import UserMessage, CollectingOutputChannel
 from rasa.core.domain import Domain
 from rasa.core.events import ActionExecuted, UserUttered
 from rasa.core.trackers import DialogueStateTracker
-from rasa.utils.common import raise_warning
 
 if typing.TYPE_CHECKING:
     from rasa.core.agent import Agent
@@ -28,10 +29,10 @@ def _check_prediction_aligns_with_story(
 
     p, a = align_lists(last_prediction, actions_between_utterances)
     if p != a:
-        raise_warning(
-            f"The model predicted different actions than the "
-            f"model used to create the story! Expected: "
-            f"{p} but got {a}."
+        warnings.warn(
+            "Model predicted different actions than the "
+            "model used to create the story! Expected: "
+            "{} but got {}.".format(p, a)
         )
 
 
@@ -92,7 +93,7 @@ async def replay_events(tracker: DialogueStateTracker, agent: "Agent") -> None:
             )
 
             actions_between_utterances = []
-            cli_utils.print_success(event.text)
+            cliutils.print_success(event.text)
             out = CollectingOutputChannel()
             await agent.handle_text(
                 event.text, sender_id=tracker.sender_id, output_channel=out
@@ -106,7 +107,7 @@ async def replay_events(tracker: DialogueStateTracker, agent: "Agent") -> None:
                     rasa.cli.utils.print_color("Buttons:", color=color)
                     for idx, button in enumerate(buttons):
                         rasa.cli.utils.print_color(
-                            cli_utils.button_to_string(button, idx), color=color
+                            console.button_to_string(button, idx), color=color
                         )
 
             tracker = agent.tracker_store.retrieve(tracker.sender_id)

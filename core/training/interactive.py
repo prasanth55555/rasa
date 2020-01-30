@@ -6,13 +6,11 @@ import textwrap
 import uuid
 from functools import partial
 from multiprocessing import Process
-from typing import Any, Callable, Dict, List, Optional, Text, Tuple, Union, Set
+from typing import Any, Callable, Dict, List, Optional, Text, Tuple, Union
 
 import numpy as np
 from aiohttp import ClientError
 from colorclass import Color
-
-from rasa.nlu.training_data.loading import MARKDOWN, RASA
 from sanic import Sanic, response
 from sanic.exceptions import NotFound
 from terminaltables import AsciiTable, SingleTable
@@ -21,16 +19,20 @@ import questionary
 import rasa.cli.utils
 from questionary import Choice, Form, Question
 
-from rasa.cli import utils as cli_utils
+from rasa.cli import utils as cliutils
 from rasa.core import constants, run, train, utils
-from rasa.core.actions.action import ACTION_LISTEN_NAME, default_action_names
+from rasa.core.actions.action import (
+    ACTION_LISTEN_NAME,
+    default_action_names,
+    UTTER_PREFIX,
+)
 from rasa.core.channels.channel import UserMessage
+from rasa.core.channels.channel import button_to_string, element_to_string
 from rasa.core.constants import (
     DEFAULT_SERVER_FORMAT,
     DEFAULT_SERVER_PORT,
     DEFAULT_SERVER_URL,
     REQUESTED_SLOT,
-    UTTER_PREFIX,
 )
 from rasa.core.domain import Domain
 import rasa.core.events
@@ -46,12 +48,12 @@ from rasa.core.events import (
 from rasa.core.interpreter import INTENT_MESSAGE_PREFIX, NaturalLanguageInterpreter
 from rasa.core.trackers import EventVerbosity, DialogueStateTracker
 from rasa.core.training import visualization
+from rasa.core.training.structures import Story
 from rasa.core.training.visualization import (
     VISUALIZATION_TEMPLATE_PATH,
     visualize_neighborhood,
 )
 from rasa.core.utils import AvailableEndpoints
-from rasa.importers.rasa import TrainingDataImporter
 from rasa.utils.common import update_sanic_log_level
 from rasa.utils.endpoints import EndpointConfig
 
@@ -77,18 +79,12 @@ PATHS = {
     "domain": "domain.yml",
 }
 
-SAVE_IN_E2E = False
-
 # choose other intent, making sure this doesn't clash with an existing intent
 OTHER_INTENT = uuid.uuid4().hex
 OTHER_ACTION = uuid.uuid4().hex
 NEW_ACTION = uuid.uuid4().hex
 
 NEW_TEMPLATES = {}
-
-MAX_NUMBER_OF_TRAINING_STORIES_FOR_VISUALIZATION = 200
-
-DEFAULT_STORY_GRAPH_FILE = "story_graph.dot"
 
 
 class RestartConversation(Exception):
@@ -136,7 +132,9 @@ async def send_message(
     }
 
     return await endpoint.request(
-        json=payload, method="post", subpath=f"/conversations/{sender_id}/messages"
+        json=payload,
+        method="post",
+        subpath="/conversations/{}/messages".format(sender_id),
     )
 
 
@@ -146,7 +144,7 @@ async def request_prediction(
     """Request the next action prediction from core."""
 
     return await endpoint.request(
-        method="post", subpath=f"/conversations/{sender_id}/predict"
+        method="post", subpath="/conversations/{}/predict".format(sender_id)
     )
 
 
@@ -171,7 +169,9 @@ async def retrieve_tracker(
 ) -> Dict[Text, Any]:
     """Retrieve a tracker from core."""
 
-    path = f"/conversations/{sender_id}/tracker?include_events={verbosity.name}"
+    path = "/conversations/{}/tracker?include_events={}".format(
+        sender_id, verbosity.name
+    )
     return await endpoint.request(
         method="get", subpath=path, headers={"Accept": "application/json"}
     )
@@ -189,7 +189,7 @@ async def send_action(
 
     payload = ActionExecuted(action_name, policy, confidence).as_dict()
 
-    subpath = f"/conversations/{sender_id}/execute"
+    subpath = "/conversations/{}/execute".format(sender_id)
 
     try:
         return await endpoint.request(json=payload, method="post", subpath=subpath)
@@ -197,23 +197,25 @@ async def send_action(
         if is_new_action:
             if action_name in NEW_TEMPLATES:
                 warning_questions = questionary.confirm(
-                    f"WARNING: You have created a new action: '{action_name}', "
-                    f"with matching template: '{[*NEW_TEMPLATES[action_name]][0]}'. "
-                    f"This action will not return its message in this session, "
-                    f"but the new utterance will be saved to your domain file "
-                    f"when you exit and save this session. "
-                    f"You do not need to do anything further."
+                    "WARNING: You have created a new action: '{0}', "
+                    "with matching template: '{1}'. "
+                    "This action will not return its message in this session, "
+                    "but the new utterance will be saved to your domain file "
+                    "when you exit and save this session. "
+                    "You do not need to do anything further. "
+                    "".format(action_name, [*NEW_TEMPLATES[action_name]][0])
                 )
                 await _ask_questions(warning_questions, sender_id, endpoint)
             else:
                 warning_questions = questionary.confirm(
-                    f"WARNING: You have created a new action: '{action_name}', "
-                    f"which was not successfully executed. "
-                    f"If this action does not return any events, "
-                    f"you do not need to do anything. "
-                    f"If this is a custom action which returns events, "
-                    f"you are recommended to implement this action "
-                    f"in your action server and try again."
+                    "WARNING: You have created a new action: '{}', "
+                    "which was not successfully executed. "
+                    "If this action does not return any events, "
+                    "you do not need to do anything. "
+                    "If this is a custom action which returns events, "
+                    "you are recommended to implement this action "
+                    "in your action server and try again."
+                    "".format(action_name)
                 )
                 await _ask_questions(warning_questions, sender_id, endpoint)
 
@@ -231,7 +233,7 @@ async def send_event(
 ) -> Dict[Text, Any]:
     """Log an event to a conversation."""
 
-    subpath = f"/conversations/{sender_id}/tracker/events"
+    subpath = "/conversations/{}/tracker/events".format(sender_id)
 
     return await endpoint.request(json=evt, method="post", subpath=subpath)
 
@@ -255,22 +257,20 @@ def format_bot_output(message: BotUttered) -> Text:
 
     if data.get("buttons"):
         output += "\nButtons:"
-        choices = cli_utils.button_choices_from_message_data(
-            data, allow_free_text_input=True
-        )
-        for choice in choices:
-            output += "\n" + choice
+        for idx, button in enumerate(data.get("buttons")):
+            button_str = button_to_string(button, idx)
+            output += "\n" + button_str
 
     if data.get("elements"):
         output += "\nElements:"
         for idx, element in enumerate(data.get("elements")):
-            element_str = cli_utils.element_to_string(element, idx)
+            element_str = element_to_string(element, idx)
             output += "\n" + element_str
 
     if data.get("quick_replies"):
         output += "\nQuick replies:"
         for idx, element in enumerate(data.get("quick_replies")):
-            element_str = cli_utils.element_to_string(element, idx)
+            element_str = element_to_string(element, idx)
             output += "\n" + element_str
     return output
 
@@ -324,7 +324,9 @@ def _selection_choices_from_intent_prediction(
 
     choices = []
     for p in sorted_intents:
-        name_with_confidence = f'{p.get("confidence"):03.2f} {p.get("name"):40}'
+        name_with_confidence = "{:03.2f} {:40}".format(
+            p.get("confidence"), p.get("name")
+        )
         choice = {"name": name_with_confidence, "value": p.get("name")}
         choices.append(choice)
 
@@ -353,7 +355,8 @@ async def _request_free_text_utterance(
 
     question = questionary.text(
         message=(
-            f"Please type the message for your new utterance " f"template '{action}':"
+            "Please type the message for your new utterance "
+            "template '{}':".format(action)
         ),
         validate=io_utils.not_empty_validator("Please enter a template message"),
     )
@@ -444,17 +447,17 @@ async def _print_history(sender_id: Text, endpoint: EndpointConfig) -> None:
     events = tracker_dump.get("events", [])
 
     table = _chat_history_table(events)
-    slot_strings = _slot_history(tracker_dump)
+    slot_strs = _slot_history(tracker_dump)
 
-    print("------")
-    print("Chat History\n")
-    print(table)
+    print ("------")
+    print ("Chat History\n")
+    print (table)
 
-    if slot_strings:
-        print("\n")
-        print(f"Current slots: \n\t{', '.join(slot_strings)}\n")
+    if slot_strs:
+        print ("\n")
+        print ("Current slots: \n\t{}\n".format(", ".join(slot_strs)))
 
-    print("------")
+    print ("------")
 
 
 def _chat_history_table(events: List[Dict[Text, Any]]) -> Text:
@@ -477,7 +480,7 @@ def _chat_history_table(events: List[Dict[Text, Any]]) -> Text:
 
         _lines = [
             colored(wrap(_md, max_width), "hired"),
-            f"intent: {intent_name} {_confidence:03.2f}",
+            "intent: {} {:03.2f}".format(intent_name, _confidence),
         ]
         return "\n".join(_lines)
 
@@ -515,7 +518,9 @@ def _chat_history_table(events: List[Dict[Text, Any]]) -> Text:
         if isinstance(event, ActionExecuted):
             bot_column.append(colored(event.action_name, "autocyan"))
             if event.confidence is not None:
-                bot_column[-1] += colored(f" {event.confidence:03.2f}", "autowhite")
+                bot_column[-1] += colored(
+                    " {:03.2f}".format(event.confidence), "autowhite"
+                )
 
         elif isinstance(event, UserUttered):
             if bot_column:
@@ -550,13 +555,13 @@ def _chat_history_table(events: List[Dict[Text, Any]]) -> Text:
 def _slot_history(tracker_dump: Dict[Text, Any]) -> List[Text]:
     """Create an array of slot representations to be displayed."""
 
-    slot_strings = []
+    slot_strs = []
     for k, s in tracker_dump.get("slots", {}).items():
-        colored_value = cli_utils.wrap_with_color(
+        colored_value = cliutils.wrap_with_color(
             str(s), color=rasa.cli.utils.bcolors.WARNING
         )
-        slot_strings.append(f"{k}: {colored_value}")
-    return slot_strings
+        slot_strs.append("{}: {}".format(k, colored_value))
+    return slot_strs
 
 
 async def _write_data_to_file(sender_id: Text, endpoint: EndpointConfig):
@@ -567,12 +572,9 @@ async def _write_data_to_file(sender_id: Text, endpoint: EndpointConfig):
     tracker = await retrieve_tracker(endpoint, sender_id)
     events = tracker.get("events", [])
 
-    serialised_domain = await retrieve_domain(endpoint)
-    domain = Domain.from_dict(serialised_domain)
-
-    await _write_stories_to_file(story_path, events, domain)
+    await _write_stories_to_file(story_path, events)
     await _write_nlu_to_file(nlu_path, events)
-    await _write_domain_to_file(domain_path, events, domain)
+    await _write_domain_to_file(domain_path, events, endpoint)
 
     logger.info("Successfully wrote stories and NLU data")
 
@@ -618,7 +620,7 @@ async def _request_action_from_user(
 
     choices = [
         {
-            "name": f'{a.get("score"):03.2f} {a.get("action"):40}',
+            "name": "{:03.2f} {:40}".format(a.get("score"), a.get("action")),
             "value": a.get("action"),
         }
         for a in predictions
@@ -657,7 +659,7 @@ async def _request_action_from_user(
         is_new_action = True
         action_name = action_name[32:]
 
-    print(f"Thanks! The bot will now run {action_name}.\n")
+    print ("Thanks! The bot will now run {}.\n".format(action_name))
     return action_name, is_new_action
 
 
@@ -680,7 +682,7 @@ def _request_export_info() -> Tuple[Text, Text, Text]:
             "merge learned data with previous training examples)",
             default=PATHS["nlu"],
             validate=io_utils.file_type_validator(
-                [".md", ".json"],
+                [".md"],
                 "Please provide a valid export path for the NLU data, e.g. 'nlu.md'.",
             ),
         ),
@@ -699,7 +701,7 @@ def _request_export_info() -> Tuple[Text, Text, Text]:
     if not answers:
         raise Abort()
 
-    return answers["export_stories"], answers["export_nlu"], answers["export_domain"]
+    return (answers["export_stories"], answers["export_nlu"], answers["export_domain"])
 
 
 def _split_conversation_at_restarts(
@@ -728,21 +730,36 @@ def _split_conversation_at_restarts(
 def _collect_messages(events: List[Dict[Text, Any]]) -> List[Message]:
     """Collect the message text and parsed data from the UserMessage events
     into a list"""
+    from rasa.nlu.extractors.duckling_http_extractor import DucklingHTTPExtractor
+    from rasa.nlu.extractors.mitie_entity_extractor import MitieEntityExtractor
+    from rasa.nlu.extractors.spacy_entity_extractor import SpacyEntityExtractor
 
-    import rasa.nlu.training_data.util as rasa_nlu_training_data_utils
-
-    messages = []
+    msgs = []
 
     for event in events:
         if event.get("event") == UserUttered.type_name:
             data = event.get("parse_data", {})
-            rasa_nlu_training_data_utils.remove_untrainable_entities_from(data)
-            msg = Message.build(data["text"], data["intent"]["name"], data["entities"])
-            messages.append(msg)
-        elif event.get("event") == UserUtteranceReverted.type_name and messages:
-            messages.pop()  # user corrected the nlu, remove incorrect example
 
-    return messages
+            for entity in data.get("entities", []):
+
+                excluded_extractors = [
+                    DucklingHTTPExtractor.__name__,
+                    SpacyEntityExtractor.__name__,
+                    MitieEntityExtractor.__name__,
+                ]
+                logger.debug(
+                    "Exclude entity marking of following extractors"
+                    " {} when writing nlu data "
+                    "to file.".format(excluded_extractors)
+                )
+
+                if entity.get("extractor") in excluded_extractors:
+                    data["entities"].remove(entity)
+
+            msg = Message.build(data["text"], data["intent"]["name"], data["entities"])
+            msgs.append(msg)
+
+    return msgs
 
 
 def _collect_actions(events: List[Dict[Text, Any]]) -> List[Dict[Text, Any]]:
@@ -752,7 +769,7 @@ def _collect_actions(events: List[Dict[Text, Any]]) -> List[Dict[Text, Any]]:
 
 
 async def _write_stories_to_file(
-    export_story_path: Text, events: List[Dict[Text, Any]], domain: Domain
+    export_story_path: Text, events: List[Dict[Text, Any]]
 ) -> None:
     """Write the conversation of the sender_id to the file paths."""
 
@@ -765,29 +782,11 @@ async def _write_stories_to_file(
     else:
         append_write = "w"  # make a new file if not
 
-    with open(export_story_path, append_write, encoding=io_utils.DEFAULT_ENCODING) as f:
-        i = 1
+    with open(export_story_path, append_write, encoding="utf-8") as f:
         for conversation in sub_conversations:
             parsed_events = rasa.core.events.deserialise_events(conversation)
-            tracker = DialogueStateTracker.from_events(
-                f"interactive_story_{i}", evts=parsed_events, slots=domain.slots
-            )
-
-            if any(
-                isinstance(event, UserUttered) for event in tracker.applied_events()
-            ):
-                i += 1
-                f.write("\n" + tracker.export_stories(SAVE_IN_E2E))
-
-
-def _filter_messages(msgs: List[Message]) -> List[Message]:
-    """Filter messages removing those that start with INTENT_MESSAGE_PREFIX"""
-
-    filtered_messages = []
-    for msg in msgs:
-        if not msg.text.startswith(INTENT_MESSAGE_PREFIX):
-            filtered_messages.append(msg)
-    return filtered_messages
+            s = Story.from_events(parsed_events)
+            f.write("\n" + s.as_story_string(flat=True))
 
 
 async def _write_nlu_to_file(
@@ -797,14 +796,13 @@ async def _write_nlu_to_file(
     from rasa.nlu.training_data import TrainingData
 
     msgs = _collect_messages(events)
-    msgs = _filter_messages(msgs)
 
     # noinspection PyBroadException
     try:
         previous_examples = loading.load_data(export_nlu_path)
     except Exception as e:
         logger.debug(
-            f"An exception occurred while trying to load the NLU data. {str(e)}"
+            "An exception occurred while trying to load the NLU data. {}".format(str(e))
         )
         # No previous file exists, use empty training data as replacement.
         previous_examples = TrainingData()
@@ -813,33 +811,24 @@ async def _write_nlu_to_file(
 
     # need to guess the format of the file before opening it to avoid a read
     # in a write
-    nlu_format = _get_nlu_target_format(export_nlu_path)
-    if nlu_format == MARKDOWN:
-        stringified_training_data = nlu_data.nlu_as_markdown()
+    if loading.guess_format(export_nlu_path) in {"md", "unk"}:
+        fformat = "md"
     else:
-        stringified_training_data = nlu_data.nlu_as_json()
+        fformat = "json"
 
-    io_utils.write_text_file(stringified_training_data, export_nlu_path)
-
-
-def _get_nlu_target_format(export_path: Text) -> Text:
-    guessed_format = loading.guess_format(export_path)
-
-    if guessed_format not in {MARKDOWN, RASA}:
-        if export_path.endswith(".json"):
-            guessed_format = RASA
+    with open(export_nlu_path, "w", encoding="utf-8") as f:
+        if fformat == "md":
+            f.write(nlu_data.as_markdown())
         else:
-            guessed_format = MARKDOWN
-
-    return guessed_format
+            f.write(nlu_data.as_json())
 
 
-def _entities_from_messages(messages: List[Message]) -> List[Text]:
-    """Return all entities that occur in at least one of the messages."""
+def _entities_from_messages(messages):
+    """Return all entities that occur in atleast one of the messages."""
     return list({e["entity"] for m in messages for e in m.data.get("entities", [])})
 
 
-def _intents_from_messages(messages: List[Message]) -> Set[Text]:
+def _intents_from_messages(messages):
     """Return all intents that occur in at least one of the messages."""
 
     # set of distinct intents
@@ -849,15 +838,18 @@ def _intents_from_messages(messages: List[Message]) -> Set[Text]:
 
 
 async def _write_domain_to_file(
-    domain_path: Text, events: List[Dict[Text, Any]], old_domain: Domain
+    domain_path: Text, events: List[Dict[Text, Any]], endpoint: EndpointConfig
 ) -> None:
     """Write an updated domain file to the file path."""
 
     io_utils.create_path(domain_path)
 
+    domain = await retrieve_domain(endpoint)
+    old_domain = Domain.from_dict(domain)
+
     messages = _collect_messages(events)
     actions = _collect_actions(events)
-    templates = NEW_TEMPLATES  # type: Dict[Text, List[Dict[Text, Any]]]
+    templates = NEW_TEMPLATES
 
     # TODO for now there is no way to distinguish between action and form
     collected_actions = list(
@@ -882,7 +874,7 @@ async def _predict_till_next_listen(
     sender_ids: List[Text],
     plot_file: Optional[Text],
 ) -> None:
-    """Predict and validate actions until we need to wait for a user message."""
+    """Predict and validate actions until we need to wait for a user msg."""
 
     listen = False
     while not listen:
@@ -918,21 +910,16 @@ async def _predict_till_next_listen(
         if last_event.get("event") == BotUttered.type_name and last_event["data"].get(
             "buttons", None
         ):
-            response = _get_button_choice(last_event)
-            if response != cli_utils.FREE_TEXT_INPUT_PROMPT:
-                await send_message(endpoint, sender_id, response)
+            data = last_event["data"]
+            message = last_event.get("text", "")
+            choices = [
+                button_to_string(button, idx)
+                for idx, button in enumerate(data.get("buttons"))
+            ]
 
-
-def _get_button_choice(last_event: Dict[Text, Any]) -> Text:
-    data = last_event["data"]
-    message = last_event.get("text", "")
-
-    choices = cli_utils.button_choices_from_message_data(
-        data, allow_free_text_input=True
-    )
-    question = questionary.select(message, choices)
-    response = cli_utils.payload_from_button_question(question)
-    return response
+            question = questionary.select(message, choices)
+            button_payload = cliutils.payload_from_button_question(question)
+            await send_message(endpoint, sender_id, button_payload)
 
 
 async def _correct_wrong_nlu(
@@ -973,7 +960,7 @@ async def _correct_wrong_action(
     )
 
 
-def _form_is_rejected(action_name: Text, tracker: Dict[Text, Any]) -> bool:
+def _form_is_rejected(action_name, tracker):
     """Check if the form got rejected with the most recent action name."""
     return (
         tracker.get("active_form", {}).get("name")
@@ -982,7 +969,7 @@ def _form_is_rejected(action_name: Text, tracker: Dict[Text, Any]) -> bool:
     )
 
 
-def _form_is_restored(action_name: Text, tracker: Dict[Text, Any]) -> bool:
+def _form_is_restored(action_name, tracker):
     """Check whether the form is called again after it was rejected."""
     return (
         tracker.get("active_form", {}).get("rejected")
@@ -991,7 +978,7 @@ def _form_is_restored(action_name: Text, tracker: Dict[Text, Any]) -> bool:
     )
 
 
-async def _confirm_form_validation(action_name, tracker, endpoint, sender_id) -> None:
+async def _confirm_form_validation(action_name, tracker, endpoint, sender_id):
     """Ask a user whether an input for a form should be validated.
 
     Previous to this call, the active form was chosen after it was rejected."""
@@ -999,8 +986,8 @@ async def _confirm_form_validation(action_name, tracker, endpoint, sender_id) ->
     requested_slot = tracker.get("slots", {}).get(REQUESTED_SLOT)
 
     validation_questions = questionary.confirm(
-        f"Should '{action_name}' validate user input to fill "
-        f"the slot '{requested_slot}'?"
+        "Should '{}' validate user input to fill "
+        "the slot '{}'?".format(action_name, requested_slot)
     )
     validate_input = await _ask_questions(validation_questions, sender_id, endpoint)
 
@@ -1040,7 +1027,9 @@ async def _validate_action(
 
     Returns `True` if the prediction is correct, `False` otherwise."""
 
-    question = questionary.confirm(f"The bot wants to run '{action_name}', correct?")
+    question = questionary.confirm(
+        "The bot wants to run '{}', correct?".format(action_name)
+    )
 
     is_correct = await _ask_questions(question, sender_id, endpoint)
 
@@ -1086,8 +1075,8 @@ def _as_md_message(parse_data: Dict[Text, Any]) -> Text:
 
     if not parse_data.get("entities"):
         parse_data["entities"] = []
-
-    return MarkdownWriter.generate_message_md(parse_data)
+    # noinspection PyProtectedMember
+    return MarkdownWriter()._generate_message_md(parse_data)
 
 
 def _validate_user_regex(latest_message: Dict[Text, Any], intents: List[Text]) -> bool:
@@ -1118,17 +1107,17 @@ async def _validate_user_text(
     entities = parse_data.get("entities", [])
     if entities:
         message = (
-            f"Is the intent '{intent}' correct for '{text}' and are "
-            f"all entities labeled correctly?"
+            "Is the intent '{}' correct for '{}' and are "
+            "all entities labeled correctly?".format(intent, text)
         )
     else:
         message = (
-            f"Your NLU model classified '{text}' with intent '{intent}'"
-            f" and there are no entities, is this correct?"
+            "Your NLU model classified '{}' with intent '{}'"
+            " and there are no entities, is this correct?".format(text, intent)
         )
 
     if intent is None:
-        print(f"The NLU classification for '{text}' returned '{intent}'")
+        print ("The NLU classification for '{}' returned '{}'".format(text, intent))
         return False
     else:
         question = questionary.confirm(message)
@@ -1190,7 +1179,7 @@ async def _correct_entities(
 
     annotation = await _ask_questions(question, sender_id, endpoint)
     # noinspection PyProtectedMember
-    parse_annotated = MarkdownReader().parse_training_example(annotation)
+    parse_annotated = MarkdownReader()._parse_training_example(annotation)
 
     corrected_entities = _merge_annotated_and_original_entities(
         parse_annotated, parse_original
@@ -1199,9 +1188,7 @@ async def _correct_entities(
     return corrected_entities
 
 
-def _merge_annotated_and_original_entities(
-    parse_annotated: Message, parse_original: Dict[Text, Any]
-) -> List[Dict[Text, Any]]:
+def _merge_annotated_and_original_entities(parse_annotated, parse_original):
     # overwrite entities which have already been
     # annotated in the original annotation to preserve
     # additional entity parser information
@@ -1214,7 +1201,7 @@ def _merge_annotated_and_original_entities(
     return entities
 
 
-def _is_same_entity_annotation(entity, other) -> Any:
+def _is_same_entity_annotation(entity, other):
     return entity["value"] == other["value"] and entity["entity"] == other["entity"]
 
 
@@ -1325,68 +1312,69 @@ def _print_help(skip_visualization: bool) -> None:
     """Print some initial help message for the user."""
 
     if not skip_visualization:
-        visualization_url = DEFAULT_SERVER_FORMAT.format(
-            "http", DEFAULT_SERVER_PORT + 1
-        )
-        visualization_help = (
-            f"Visualisation at {visualization_url}/visualization.html ."
+        visualization_url = DEFAULT_SERVER_FORMAT.format(DEFAULT_SERVER_PORT + 1)
+        visualization_help = "Visualisation at {}/visualization.html.".format(
+            visualization_url
         )
     else:
         visualization_help = ""
 
     rasa.cli.utils.print_success(
-        f"Bot loaded. {visualization_help}\n"
-        f"Type a message and press enter "
-        f"(press 'Ctr-c' to exit)."
+        "Bot loaded. {}\n"
+        "Type a message and press enter "
+        "(press 'Ctr-c' to exit). "
+        "".format(visualization_help)
     )
 
 
 async def record_messages(
     endpoint: EndpointConfig,
-    file_importer: TrainingDataImporter,
     sender_id: Text = UserMessage.DEFAULT_SENDER_ID,
     max_message_limit: Optional[int] = None,
+    stories: Optional[Text] = None,
     skip_visualization: bool = False,
 ):
     """Read messages from the command line and print bot responses."""
 
+    from rasa.core import training
+
     try:
+        _print_help(skip_visualization)
+
         try:
             domain = await retrieve_domain(endpoint)
         except ClientError:
             logger.exception(
-                f"Failed to connect to Rasa Core server at '{endpoint.url}'. "
-                f"Is the server running?"
+                "Failed to connect to Rasa Core server at '{}'. "
+                "Is the server running?".format(endpoint.url)
             )
             return
+
+        trackers = await training.load_data(
+            stories,
+            Domain.from_dict(domain),
+            augmentation_factor=0,
+            use_story_concatenation=False,
+        )
 
         intents = [next(iter(i)) for i in (domain.get("intents") or [])]
 
         num_messages = 0
+        sender_ids = [t.events for t in trackers] + [sender_id]
 
         if not skip_visualization:
-            events_including_current_user_id = await _get_tracker_events_to_plot(
-                domain, file_importer, sender_id
-            )
-
-            plot_file = DEFAULT_STORY_GRAPH_FILE
-            await _plot_trackers(events_including_current_user_id, plot_file, endpoint)
+            plot_file = "story_graph.dot"
+            await _plot_trackers(sender_ids, plot_file, endpoint)
         else:
-            # `None` means that future `_plot_trackers` calls will also skip the
-            # visualization.
             plot_file = None
-            events_including_current_user_id = []
-
-        _print_help(skip_visualization)
 
         while not utils.is_limit_reached(num_messages, max_message_limit):
             try:
                 if await is_listening_for_message(sender_id, endpoint):
                     await _enter_user_message(sender_id, endpoint)
                     await _validate_nlu(intents, endpoint, sender_id)
-
                 await _predict_till_next_listen(
-                    endpoint, sender_id, events_including_current_user_id, plot_file
+                    endpoint, sender_id, sender_ids, plot_file
                 )
 
                 num_messages += 1
@@ -1414,9 +1402,7 @@ async def record_messages(
                 logger.info("Restarted conversation at fork.")
 
                 await _print_history(sender_id, endpoint)
-                await _plot_trackers(
-                    events_including_current_user_id, plot_file, endpoint
-                )
+                await _plot_trackers(sender_ids, plot_file, endpoint)
 
     except Abort:
         return
@@ -1425,43 +1411,7 @@ async def record_messages(
         raise
 
 
-async def _get_tracker_events_to_plot(
-    domain: Dict[Text, Any], file_importer: TrainingDataImporter, sender_id: Text,
-) -> List[Union[Text, List[Event]]]:
-    training_trackers = await _get_training_trackers(file_importer, domain)
-    number_of_trackers = len(training_trackers)
-    if number_of_trackers > MAX_NUMBER_OF_TRAINING_STORIES_FOR_VISUALIZATION:
-        rasa.cli.utils.print_warning(
-            f"You have {number_of_trackers} different story paths in "
-            f"your training data. Visualizing them is very resource "
-            f"consuming. Hence, the visualization will only show the stories "
-            f"which you created during interactive learning, but not your "
-            f"training stories."
-        )
-        training_trackers = []
-
-    training_data_events = [t.events for t in training_trackers]
-    events_including_current_user_id = training_data_events + [sender_id]
-
-    return events_including_current_user_id
-
-
-async def _get_training_trackers(
-    file_importer: TrainingDataImporter, domain: Dict[str, Any]
-) -> List[DialogueStateTracker]:
-    from rasa.core import training
-
-    return await training.load_data(
-        file_importer,
-        Domain.from_dict(domain),
-        augmentation_factor=0,
-        use_story_concatenation=False,
-    )
-
-
-def _serve_application(
-    app: Sanic, file_importer: TrainingDataImporter, skip_visualization: bool
-) -> Sanic:
+def _serve_application(app, stories, skip_visualization):
     """Start a core server and attach the interactive learning IO."""
 
     endpoint = EndpointConfig(url=DEFAULT_SERVER_URL)
@@ -1471,7 +1421,7 @@ def _serve_application(
 
         await record_messages(
             endpoint=endpoint,
-            file_importer=file_importer,
+            stories=stories,
             skip_visualization=skip_visualization,
             sender_id=uuid.uuid4().hex,
         )
@@ -1519,10 +1469,8 @@ def start_visualization(image_path: Text = None) -> None:
 
 
 # noinspection PyUnusedLocal
-async def train_agent_on_start(
-    args, endpoints, additional_arguments, app, loop
-) -> None:
-    _interpreter = NaturalLanguageInterpreter.create(endpoints.nlu or args.get("nlu"))
+async def train_agent_on_start(args, endpoints, additional_arguments, app, loop):
+    _interpreter = NaturalLanguageInterpreter.create(args.get("nlu"), endpoints.nlu)
 
     model_directory = args.get("out", tempfile.mkdtemp(suffix="_core_model"))
 
@@ -1540,15 +1488,13 @@ async def train_agent_on_start(
     app.agent = _agent
 
 
-async def wait_til_server_is_running(
-    endpoint, max_retries=30, sleep_between_retries=1
-) -> bool:
+async def wait_til_server_is_running(endpoint, max_retries=30, sleep_between_retries=1):
     """Try to reach the server, retry a couple of times and sleep in between."""
 
     while max_retries:
         try:
             r = await retrieve_status(endpoint)
-            logger.info(f"Reached core: {r}")
+            logger.info("Reached core: {}".format(r))
             if not r.get("is_ready"):
                 # server did not finish loading the agent yet
                 # in this case, we need to wait till the model trained
@@ -1567,12 +1513,13 @@ async def wait_til_server_is_running(
 
 
 def run_interactive_learning(
-    file_importer: TrainingDataImporter,
+    stories: Text = None,
     skip_visualization: bool = False,
     server_args: Dict[Text, Any] = None,
+    additional_arguments: Dict[Text, Any] = None,
 ):
     """Start the interactive learning with the model of the agent."""
-    global SAVE_IN_E2E
+
     server_args = server_args or {}
 
     if server_args.get("nlu_data"):
@@ -1584,10 +1531,8 @@ def run_interactive_learning(
     if server_args.get("domain"):
         PATHS["domain"] = server_args["domain"]
 
-    SAVE_IN_E2E = server_args["e2e"]
-
     if not skip_visualization:
-        p = Process(target=start_visualization, args=(DEFAULT_STORY_GRAPH_FILE,))
+        p = Process(target=start_visualization, args=("story_graph.dot",))
         p.daemon = True
         p.start()
     else:
@@ -1598,13 +1543,19 @@ def run_interactive_learning(
 
     # before_server_start handlers make sure the agent is loaded before the
     # interactive learning IO starts
-    app.register_listener(
-        partial(run.load_agent_on_start, server_args.get("model"), endpoints, None),
-        "before_server_start",
-    )
+    if server_args.get("model"):
+        app.register_listener(
+            partial(run.load_agent_on_start, server_args.get("model"), endpoints, None),
+            "before_server_start",
+        )
+    else:
+        app.register_listener(
+            partial(train_agent_on_start, server_args, endpoints, additional_arguments),
+            "before_server_start",
+        )
 
-    _serve_application(app, file_importer, skip_visualization)
+    _serve_application(app, stories, skip_visualization)
 
     if not skip_visualization and p is not None:
-        p.terminate()  # pytype: disable=attribute-error
-        p.join()  # pytype: disable=attribute-error
+        p.terminate()
+        p.join()

@@ -1,12 +1,9 @@
 import logging
 import typing
-import warnings
 from typing import Any, Dict, Hashable, List, Optional, Set, Text, Tuple
 
 from rasa.nlu.config import RasaNLUModelConfig, override_defaults
-from rasa.nlu.constants import RESPONSE_ATTRIBUTE
-from rasa.nlu.training_data import Message, TrainingData
-from rasa.utils.common import raise_warning
+from rasa.nlu.training_data import TrainingData, Message
 
 if typing.TYPE_CHECKING:
     from rasa.nlu.model import Metadata
@@ -29,7 +26,7 @@ def find_unavailable_packages(package_names: List[Text]) -> Set[Text]:
 
 
 def validate_requirements(component_names: List[Text]) -> None:
-    """Ensures that all required importable python packages are installed to
+    """Ensures that all required python packages are installed to
     instantiate and used the passed components."""
     from rasa.nlu import registry
 
@@ -44,11 +41,10 @@ def validate_requirements(component_names: List[Text]) -> None:
         # if available, use the development file to figure out the correct
         # version numbers for each requirement
         raise Exception(
-            f"Not all required importable packages are installed. "
-            f"To use this pipeline, you need to install the "
-            f"missing dependencies. "
-            f"Please install the package(s) that contain the module(s): "
-            f"{', '.join(failed_imports)}"
+            "Not all required packages are installed. "
+            + "To use this pipeline, you need to install the "
+            "missing dependencies. "
+            + "Please install {}".format(", ".join(failed_imports))
         )
 
 
@@ -65,8 +61,8 @@ def validate_arguments(
         raise ValueError(
             "Can not train an empty pipeline. "
             "Make sure to specify a proper pipeline in "
-            "the configuration using the 'pipeline' key. "
-            "The 'backend' configuration key is "
+            "the configuration using the `pipeline` key."
+            + "The `backend` configuration key is "
             "NOT supported anymore."
         )
 
@@ -74,61 +70,13 @@ def validate_arguments(
 
     for component in pipeline:
         for r in component.requires:
-            if isinstance(r, Tuple):
-                validate_requires_any_of(r, provided_properties, str(component.name))
-            else:
-                if r not in provided_properties:
-                    raise Exception(
-                        f"Failed to validate component {component.name}. "
-                        f"Missing property: '{r}'"
-                    )
-
+            if r not in provided_properties:
+                raise Exception(
+                    "Failed to validate at component "
+                    "'{}'. Missing property: '{}'"
+                    "".format(component.name, r)
+                )
         provided_properties.update(component.provides)
-
-
-def any_of(*args) -> Tuple[Any]:
-    """Helper function to define that one of the given arguments is required
-    by a component.
-
-    Should be used inside `requires`."""
-    return args
-
-
-def validate_requires_any_of(
-    required_properties: Tuple[Text],
-    provided_properties: Set[Text],
-    component_name: Text,
-) -> None:
-    """Validates that at least one of the given required properties is present in
-    the provided properties."""
-
-    property_present = any(
-        [property in provided_properties for property in required_properties]
-    )
-
-    if not property_present:
-        raise Exception(
-            f"Failed to validate component '{component_name}'. "
-            f"Missing one of the following properties: "
-            f"{required_properties}."
-        )
-
-
-def validate_required_components_from_data(
-    pipeline: List["Component"], data: TrainingData
-):
-
-    response_selector_exists = False
-    for component in pipeline:
-        # check if a response selector is part of NLU pipeline
-        if RESPONSE_ATTRIBUTE in component.provides:
-            response_selector_exists = True
-
-    if len(data.response_examples) and not response_selector_exists:
-        raise_warning(
-            "Training data consists examples for training a response selector but "
-            "no response selector component specified inside NLU pipeline."
-        )
 
 
 class MissingArgumentError(ValueError):
@@ -140,7 +88,7 @@ class MissingArgumentError(ValueError):
     """
 
     def __init__(self, message: Text) -> None:
-        super().__init__(message)
+        super(MissingArgumentError, self).__init__(message)
         self.message = message
 
     def __str__(self) -> Text:
@@ -159,11 +107,11 @@ class UnsupportedLanguageError(Exception):
         self.component = component
         self.language = language
 
-        super().__init__(component, language)
+        super(UnsupportedLanguageError, self).__init__(component, language)
 
     def __str__(self) -> Text:
-        return (
-            f"component '{self.component}' does not support language '{self.language}'."
+        return "component {} does not support language {}".format(
+            self.component, self.language
         )
 
 
@@ -177,7 +125,7 @@ class ComponentMetaclass(type):
         return cls.__name__
 
 
-class Component(metaclass=ComponentMetaclass):
+class Component(object, metaclass=ComponentMetaclass):
     """A component is a message processing unit in a pipeline.
 
     Components are collected sequentially in a pipeline. Each component
@@ -216,12 +164,9 @@ class Component(metaclass=ComponentMetaclass):
     provides = []
 
     # Which attributes on a message are required by this
-    # component. E.g. if requires contains "tokens", than a
+    # component. e.g. if requires contains "tokens", than a
     # previous component in the pipeline needs to have "tokens"
     # within the above described `provides` property.
-    # Use `any_of("option_1", "option_2")` to define that either
-    # "option_1" or "option_2" needs to be present in the
-    # provided properties from the previous components.
     requires = []
 
     # Defines the default configuration parameters of a component
@@ -253,9 +198,7 @@ class Component(metaclass=ComponentMetaclass):
     @classmethod
     def required_packages(cls) -> List[Text]:
         """Specify which python packages need to be installed to use this
-        component, e.g. ``["spacy"]``. More specifically, these should be
-        importable python package names e.g. `sklearn` and not package
-        names in the dependencies sense e.g. `scikit-learn`
+        component, e.g. ``["spacy"]``.
 
         This list of requirements allows us to fail early during training
         if a required package is not installed."""
@@ -268,7 +211,7 @@ class Component(metaclass=ComponentMetaclass):
         model_dir: Optional[Text] = None,
         model_metadata: Optional["Metadata"] = None,
         cached_component: Optional["Component"] = None,
-        **kwargs: Any,
+        **kwargs: Any
     ) -> "Component":
         """Load this component from file.
 
@@ -369,7 +312,7 @@ class Component(metaclass=ComponentMetaclass):
             del d["partial_processing_pipeline"]
         return d
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other):
         return self.__dict__ == other.__dict__
 
     def prepare_partial_processing(
@@ -413,7 +356,7 @@ class Component(metaclass=ComponentMetaclass):
         return language in cls.language_list
 
 
-class ComponentBuilder:
+class ComponentBuilder(object):
     """Creates trainers and interpreters based on configurations.
 
     Caches components for reuse.
@@ -454,7 +397,8 @@ class ComponentBuilder:
         if cache_key is not None and self.use_cache:
             self.component_cache[cache_key] = component
             logger.info(
-                f"Added '{component.name}' to component cache. Key '{cache_key}'."
+                "Added '{}' to component cache. Key '{}'."
+                "".format(component.name, cache_key)
             )
 
     def load_component(
@@ -462,7 +406,7 @@ class ComponentBuilder:
         component_meta: Dict[Text, Any],
         model_dir: Text,
         model_metadata: "Metadata",
-        **context: Any,
+        **context: Any
     ) -> Component:
         """Tries to retrieve a component from the cache, else calls
         ``load`` to create a new component.
@@ -495,8 +439,8 @@ class ComponentBuilder:
             return component
         except MissingArgumentError as e:  # pragma: no cover
             raise Exception(
-                f"Failed to load component from file '{component_meta.get('file')}'. "
-                f"Error: {e}"
+                "Failed to load component from file `{}`. "
+                "{}".format(component_meta.get("file"), e)
             )
 
     def create_component(
@@ -517,6 +461,6 @@ class ComponentBuilder:
             return component
         except MissingArgumentError as e:  # pragma: no cover
             raise Exception(
-                f"Failed to create component '{component_config['name']}'. "
-                f"Error: {e}"
+                "Failed to create component `{}`. "
+                "{}".format(component_config["name"], e)
             )

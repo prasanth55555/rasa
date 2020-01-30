@@ -49,17 +49,22 @@ def run_actions(args: argparse.Namespace):
 
     args.actions = args.actions or DEFAULT_ACTIONS_PATH
 
+    path = args.actions.replace(".", os.sep) + ".py"
+    _ = get_validated_path(path, "action", DEFAULT_ACTIONS_PATH)
+
     sdk.main_from_args(args)
 
 
 def _validate_model_path(model_path: Text, parameter: Text, default: Text):
 
     if model_path is not None and not os.path.exists(model_path):
-        reason_str = f"'{model_path}' not found."
+        reason_str = "'{}' not found.".format(model_path)
         if model_path is None:
-            reason_str = f"Parameter '{parameter}' not set."
+            reason_str = "Parameter '{}' not set.".format(parameter)
 
-        logger.debug(f"{reason_str} Using default location '{default}' instead.")
+        logger.debug(
+            "{} Using default location '{}' instead.".format(reason_str, default)
+        )
 
         os.makedirs(default, exist_ok=True)
         model_path = default

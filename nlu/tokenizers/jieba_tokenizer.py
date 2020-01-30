@@ -6,10 +6,9 @@ import typing
 from typing import Any, Dict, List, Optional, Text
 
 from rasa.nlu.components import Component
-from rasa.nlu.tokenizers.tokenizer import Token, Tokenizer
-from rasa.nlu.training_data import Message
-
-from rasa.nlu.constants import TOKENS_NAMES, MESSAGE_ATTRIBUTES
+from rasa.nlu.config import RasaNLUModelConfig
+from rasa.nlu.tokenizers import Token, Tokenizer
+from rasa.nlu.training_data import Message, TrainingData
 
 logger = logging.getLogger(__name__)
 
@@ -18,24 +17,18 @@ if typing.TYPE_CHECKING:
     from rasa.nlu.model import Metadata
 
 
-class JiebaTokenizer(Tokenizer):
+class JiebaTokenizer(Tokenizer, Component):
 
-    provides = [TOKENS_NAMES[attribute] for attribute in MESSAGE_ATTRIBUTES]
+    provides = ["tokens"]
 
     language_list = ["zh"]
 
-    defaults = {
-        "dictionary_path": None,
-        # Flag to check whether to split intents
-        "intent_tokenization_flag": False,
-        # Symbol on which intent should be split
-        "intent_split_symbol": "_",
-    }  # default don't load custom dictionary
+    defaults = {"dictionary_path": None}  # default don't load custom dictionary
 
     def __init__(self, component_config: Dict[Text, Any] = None) -> None:
         """Construct a new intent classifier using the MITIE framework."""
 
-        super().__init__(component_config)
+        super(JiebaTokenizer, self).__init__(component_config)
 
         # path to dictionary file or None
         self.dictionary_path = self.component_config.get("dictionary_path")
@@ -58,19 +51,26 @@ class JiebaTokenizer(Tokenizer):
         """
         import jieba
 
-        jieba_userdicts = glob.glob(f"{path}/*")
+        jieba_userdicts = glob.glob("{}/*".format(path))
         for jieba_userdict in jieba_userdicts:
-            logger.info(f"Loading Jieba User Dictionary at {jieba_userdict}")
+            logger.info("Loading Jieba User Dictionary at {}".format(jieba_userdict))
             jieba.load_userdict(jieba_userdict)
 
-    def tokenize(self, message: Message, attribute: Text) -> List[Token]:
-        import jieba
+    def train(
+        self, training_data: TrainingData, config: RasaNLUModelConfig, **kwargs: Any
+    ) -> None:
+        for example in training_data.training_examples:
+            example.set("tokens", self.tokenize(example.text))
 
-        text = message.get(attribute)
+    def process(self, message: Message, **kwargs: Any) -> None:
+        message.set("tokens", self.tokenize(message.text))
+
+    @staticmethod
+    def tokenize(text: Text) -> List[Token]:
+        import jieba
 
         tokenized = jieba.tokenize(text)
         tokens = [Token(word, start) for (word, start, end) in tokenized]
-
         return tokens
 
     @classmethod
@@ -80,7 +80,7 @@ class JiebaTokenizer(Tokenizer):
         model_dir: Optional[Text] = None,
         model_metadata: Optional["Metadata"] = None,
         cached_component: Optional[Component] = None,
-        **kwargs: Any,
+        **kwargs: Any
     ) -> "JiebaTokenizer":
 
         relative_dictionary_path = meta.get("dictionary_path")
@@ -94,12 +94,12 @@ class JiebaTokenizer(Tokenizer):
         return cls(meta)
 
     @staticmethod
-    def copy_files_dir_to_dir(input_dir: Text, output_dir: Text) -> None:
+    def copy_files_dir_to_dir(input_dir, output_dir):
         # make sure target path exists
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        target_file_list = glob.glob(f"{input_dir}/*")
+        target_file_list = glob.glob("{}/*".format(input_dir))
         for target_file in target_file_list:
             shutil.copy2(target_file, output_dir)
 

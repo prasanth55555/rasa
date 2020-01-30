@@ -1,40 +1,29 @@
+# -*- coding: utf-8 -*-
 import argparse
+import asyncio
 import json
 import logging
-import os
 import re
 import sys
+from pathlib import Path
+from typing import Union
 from asyncio import Future
-from decimal import Decimal
 from hashlib import md5, sha1
 from io import StringIO
-from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generator,
-    List,
-    Optional,
-    Set,
-    TYPE_CHECKING,
-    Text,
-    Tuple,
-    Union,
-)
+from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING, Text, Tuple, Callable
 
 import aiohttp
-import numpy as np
-import rasa.utils.io as io_utils
 from aiohttp import InvalidURL
-from rasa.constants import DEFAULT_SANIC_WORKERS, ENV_SANIC_WORKERS
+from sanic import Sanic
+from sanic.views import CompositionView
+
+import rasa.utils.io as io_utils
+from rasa.utils.endpoints import read_endpoint_config
+
 
 # backwards compatibility 1.0.x
 # noinspection PyUnresolvedReferences
-from rasa.core.lock_store import LockStore, RedisLockStore
-from rasa.utils.endpoints import EndpointConfig, read_endpoint_config
-from sanic import Sanic
-from sanic.views import CompositionView
+from rasa.utils.endpoints import concat_url
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +36,7 @@ def configure_file_logging(logger_obj: logging.Logger, log_file: Optional[Text])
         return
 
     formatter = logging.Formatter("%(asctime)s [%(levelname)-5.5s]  %(message)s")
-    file_handler = logging.FileHandler(log_file, encoding=io_utils.DEFAULT_ENCODING)
+    file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logger_obj.level)
     file_handler.setFormatter(formatter)
     logger_obj.addHandler(file_handler)
@@ -56,6 +45,20 @@ def configure_file_logging(logger_obj: logging.Logger, log_file: Optional[Text])
 def module_path_from_instance(inst: Any) -> Text:
     """Return the module path of an instance's class."""
     return inst.__module__ + "." + inst.__class__.__name__
+
+
+def dump_obj_as_json_to_file(filename: Text, obj: Any) -> None:
+    """Dump an object as a json string to a file."""
+
+    dump_obj_as_str_to_file(filename, json.dumps(obj, indent=2))
+
+
+def dump_obj_as_str_to_file(filename: Text, text: Text) -> None:
+    """Dump a text to a file."""
+
+    with open(filename, "w", encoding="utf-8") as f:
+        # noinspection PyTypeChecker
+        f.write(str(text))
 
 
 def subsample_array(
@@ -88,38 +91,54 @@ def is_int(value: Any) -> bool:
         return False
 
 
-def one_hot(hot_idx: int, length: int, dtype: Optional[Text] = None) -> np.array:
+def lazyproperty(fn):
+    """Allows to avoid recomputing a property over and over.
+
+    Instead the result gets stored in a local var. Computation of the property
+    will happen once, on the first call of the property. All succeeding calls
+    will use the value stored in the private property."""
+
+    attr_name = "_lazy_" + fn.__name__
+
+    @property
+    def _lazyprop(self):
+        if not hasattr(self, attr_name):
+            setattr(self, attr_name, fn(self))
+        return getattr(self, attr_name)
+
+    return _lazyprop
+
+
+def one_hot(hot_idx, length, dtype=None):
+    import numpy
+
     if hot_idx >= length:
         raise ValueError(
             "Can't create one hot. Index '{}' is out "
             "of range (length '{}')".format(hot_idx, length)
         )
-    r = np.zeros(length, dtype)
+    r = numpy.zeros(length, dtype)
     r[hot_idx] = 1
     return r
 
 
-def str_range_list(start: int, end: int) -> List[Text]:
+def str_range_list(start, end):
     return [str(e) for e in range(start, end)]
 
 
-def generate_id(prefix: Text = "", max_chars: Optional[int] = None) -> Text:
+def generate_id(prefix="", max_chars=None):
     import uuid
 
     gid = uuid.uuid4().hex
     if max_chars:
         gid = gid[:max_chars]
 
-    return f"{prefix}{gid}"
+    return "{}{}".format(prefix, gid)
 
 
-def request_input(
-    valid_values: Optional[List[Text]] = None,
-    prompt: Optional[Text] = None,
-    max_suggested: int = 3,
-) -> Text:
+def request_input(valid_values=None, prompt=None, max_suggested=3):
     def wrong_input_message():
-        print(
+        print (
             "Invalid answer, only {}{} allowed\n".format(
                 ", ".join(valid_values[:max_suggested]),
                 ",..." if len(valid_values) > max_suggested else "",
@@ -141,7 +160,7 @@ def request_input(
 # noinspection PyPep8Naming
 
 
-class HashableNDArray:
+class HashableNDArray(object):
     """Hashable wrapper for ndarray objects.
 
     Instances of ndarray are not hashable, meaning they cannot be added to
@@ -155,7 +174,7 @@ class HashableNDArray:
     or the original object (which requires the user to be careful enough
     not to modify it)."""
 
-    def __init__(self, wrapped, tight=False) -> None:
+    def __init__(self, wrapped, tight=False):
         """Creates a new hashable object encapsulating an ndarray.
 
         wrapped
@@ -165,30 +184,34 @@ class HashableNDArray:
             Optional. If True, a copy of the input ndaray is created.
             Defaults to False.
         """
+        from numpy import array
 
         self.__tight = tight
-        self.__wrapped = np.array(wrapped) if tight else wrapped
+        self.__wrapped = array(wrapped) if tight else wrapped
         self.__hash = int(sha1(wrapped.view()).hexdigest(), 16)
 
-    def __eq__(self, other) -> bool:
-        return np.all(self.__wrapped == other.__wrapped)
+    def __eq__(self, other):
+        from numpy import all
 
-    def __hash__(self) -> int:
+        return all(self.__wrapped == other.__wrapped)
+
+    def __hash__(self):
         return self.__hash
 
-    def unwrap(self) -> np.array:
+    def unwrap(self):
         """Returns the encapsulated ndarray.
 
         If the wrapper is "tight", a copy of the encapsulated ndarray is
         returned. Otherwise, the encapsulated ndarray itself is returned."""
+        from numpy import array
 
         if self.__tight:
-            return np.array(self.__wrapped)
+            return array(self.__wrapped)
 
         return self.__wrapped
 
 
-def _dump_yaml(obj: Dict, output: Union[Text, Path, StringIO]) -> None:
+def _dump_yaml(obj, output):
     import ruamel.yaml
 
     yaml_writer = ruamel.yaml.YAML(pure=True, typ="safe")
@@ -201,8 +224,8 @@ def _dump_yaml(obj: Dict, output: Union[Text, Path, StringIO]) -> None:
 
 def dump_obj_as_yaml_to_file(filename: Union[Text, Path], obj: Dict) -> None:
     """Writes data (python dict) to the filename in yaml repr."""
-
-    io_utils.write_yaml_file(obj, filename)
+    with open(str(filename), "w", encoding="utf-8") as output:
+        _dump_yaml(obj, output)
 
 
 def dump_obj_as_yaml_to_string(obj: Dict) -> Text:
@@ -232,7 +255,7 @@ def list_routes(app: Sanic):
 
         options = {}
         for arg in route.parameters:
-            options[arg] = f"[{arg}]"
+            options[arg] = "[{0}]".format(arg)
 
         if not isinstance(route.handler, CompositionView):
             handlers = [(list(route.methods)[0], route.name)]
@@ -243,19 +266,19 @@ def list_routes(app: Sanic):
             ]
 
         for method, name in handlers:
-            line = unquote(f"{endpoint:50s} {method:30s} {name}")
+            line = unquote("{:50s} {:30s} {}".format(endpoint, method, name))
             output[name] = line
 
     url_table = "\n".join(output[url] for url in sorted(output))
-    logger.debug(f"Available web server routes: \n{url_table}")
+    logger.debug("Available web server routes: \n{}".format(url_table))
 
     return output
 
 
-def cap_length(s: Text, char_limit: int = 20, append_ellipsis: bool = True) -> Text:
+def cap_length(s, char_limit=20, append_ellipsis=True):
     """Makes sure the string doesn't exceed the passed char limit.
 
-    Appends an ellipsis if the string is too long."""
+    Appends an ellipsis if the string is to long."""
 
     if len(s) > char_limit:
         if append_ellipsis:
@@ -292,18 +315,16 @@ def all_subclasses(cls: Any) -> List[Any]:
     ]
 
 
-def is_limit_reached(num_messages: int, limit: int) -> bool:
+def is_limit_reached(num_messages, limit):
     return limit is not None and num_messages >= limit
 
 
-def read_lines(
-    filename, max_line_limit=None, line_pattern=".*"
-) -> Generator[Text, Any, None]:
+def read_lines(filename, max_line_limit=None, line_pattern=".*"):
     """Read messages from the command line and print bot responses."""
 
     line_filter = re.compile(line_pattern)
 
-    with open(filename, "r", encoding=io_utils.DEFAULT_ENCODING) as f:
+    with open(filename, "r", encoding="utf-8") as f:
         num_messages = 0
         for line in f:
             m = line_filter.match(line)
@@ -321,26 +342,17 @@ def file_as_bytes(path: Text) -> bytes:
         return f.read()
 
 
-def convert_bytes_to_string(data: Union[bytes, bytearray, Text]) -> Text:
-    """Convert `data` to string if it is a bytes-like object."""
-
-    if isinstance(data, (bytes, bytearray)):
-        return data.decode(io_utils.DEFAULT_ENCODING)
-
-    return data
-
-
 def get_file_hash(path: Text) -> Text:
     """Calculate the md5 hash of a file."""
     return md5(file_as_bytes(path)).hexdigest()
 
 
-def get_text_hash(text: Text, encoding: Text = io_utils.DEFAULT_ENCODING) -> Text:
+def get_text_hash(text: Text, encoding: Text = "utf-8") -> Text:
     """Calculate the md5 hash for a text."""
     return md5(text.encode(encoding)).hexdigest()
 
 
-def get_dict_hash(data: Dict, encoding: Text = io_utils.DEFAULT_ENCODING) -> Text:
+def get_dict_hash(data: Dict, encoding: Text = "utf-8") -> Text:
     """Calculate the md5 hash of a dictionary."""
     return md5(json.dumps(data, sort_keys=True).encode(encoding)).hexdigest()
 
@@ -367,26 +379,16 @@ def remove_none_values(obj: Dict[Text, Any]) -> Dict[Text, Any]:
     return {k: v for k, v in obj.items() if v is not None}
 
 
-def pad_lists_to_size(
-    list_x: List, list_y: List, padding_value: Optional[Any] = None
-) -> Tuple[List, List]:
-    """Compares list sizes and pads them to equal length."""
-
-    difference = len(list_x) - len(list_y)
-
-    if difference > 0:
-        return list_x, list_y + [padding_value] * difference
-    elif difference < 0:
-        return list_x + [padding_value] * (-difference), list_y
-    else:
-        return list_x, list_y
+def pad_list_to_size(_list, size, padding_value=None):
+    """Pads _list with padding_value up to size"""
+    return _list + [padding_value] * (size - len(_list))
 
 
-class AvailableEndpoints:
+class AvailableEndpoints(object):
     """Collection of configured endpoints."""
 
     @classmethod
-    def read_endpoints(cls, endpoint_file: Text) -> "AvailableEndpoints":
+    def read_endpoints(cls, endpoint_file):
         nlg = read_endpoint_config(endpoint_file, endpoint_type="nlg")
         nlu = read_endpoint_config(endpoint_file, endpoint_type="nlu")
         action = read_endpoint_config(endpoint_file, endpoint_type="action_endpoint")
@@ -394,32 +396,29 @@ class AvailableEndpoints:
         tracker_store = read_endpoint_config(
             endpoint_file, endpoint_type="tracker_store"
         )
-        lock_store = read_endpoint_config(endpoint_file, endpoint_type="lock_store")
         event_broker = read_endpoint_config(endpoint_file, endpoint_type="event_broker")
 
-        return cls(nlg, nlu, action, model, tracker_store, lock_store, event_broker)
+        return cls(nlg, nlu, action, model, tracker_store, event_broker)
 
     def __init__(
         self,
-        nlg: Optional[EndpointConfig] = None,
-        nlu: Optional[EndpointConfig] = None,
-        action: Optional[EndpointConfig] = None,
-        model: Optional[EndpointConfig] = None,
-        tracker_store: Optional[EndpointConfig] = None,
-        lock_store: Optional[EndpointConfig] = None,
-        event_broker: Optional[EndpointConfig] = None,
-    ) -> None:
+        nlg=None,
+        nlu=None,
+        action=None,
+        model=None,
+        tracker_store=None,
+        event_broker=None,
+    ):
         self.model = model
         self.action = action
         self.nlu = nlu
         self.nlg = nlg
         self.tracker_store = tracker_store
-        self.lock_store = lock_store
         self.event_broker = event_broker
 
 
 # noinspection PyProtectedMember
-def set_default_subparser(parser, default_subparser) -> None:
+def set_default_subparser(parser, default_subparser):
     """default subparser selection. Call after setup, just before parse_args()
 
     parser: the name of the parser you're making changes to
@@ -458,83 +457,27 @@ def create_task_error_logger(error_message: Text = "") -> Callable[[Future], Non
     return handler
 
 
-def replace_floats_with_decimals(obj: Union[List, Dict], round_digits: int = 9) -> Any:
-    """
-    Utility method to recursively walk a dictionary or list converting all `float` to `Decimal` as required by DynamoDb.
+class LockCounter(asyncio.Lock):
+    """Decorated asyncio lock that counts how many coroutines are waiting.
 
-    Args:
-        obj: A `List` or `Dict` object.
-        round_digits: A int value to set the rounding precision of Decimal values.
+    The counter can be used to discard the lock when there is no coroutine
+    waiting for it. For this to work, there should not be any execution yield
+    between retrieving the lock and acquiring it, otherwise there might be
+    race conditions."""
 
-    Returns: An object with all matching values and `float` types replaced by `Decimal`s rounded to `round_digits` decimal places.
+    def __init__(self) -> None:
+        super().__init__()
+        self.wait_counter = 0
 
-    """
-    if isinstance(obj, list):
-        for i in range(len(obj)):
-            obj[i] = replace_floats_with_decimals(obj[i], round_digits)
-        return obj
-    elif isinstance(obj, dict):
-        for j in obj:
-            obj[j] = replace_floats_with_decimals(obj[j], round_digits)
-        return obj
-    elif isinstance(obj, float) or isinstance(obj, Decimal):
-        return round(Decimal(obj), round_digits)
-    else:
-        return obj
+    async def acquire(self) -> bool:
+        """Acquire the lock, makes sure only one coroutine can retrieve it."""
 
+        self.wait_counter += 1
+        try:
+            return await super(LockCounter, self).acquire()  # type: ignore
+        finally:
+            self.wait_counter -= 1
 
-def _lock_store_is_redis_lock_store(
-    lock_store: Union[EndpointConfig, LockStore, None]
-) -> bool:
-    # determine whether `lock_store` is associated with a `RedisLockStore`
-    if isinstance(lock_store, LockStore):
-        if isinstance(lock_store, RedisLockStore):
-            return True
-        return False
-
-    # `lock_store` is `None` or `EndpointConfig`
-    return lock_store is not None and lock_store.type == "redis"
-
-
-def number_of_sanic_workers(lock_store: Union[EndpointConfig, LockStore, None]) -> int:
-    """Get the number of Sanic workers to use in `app.run()`.
-
-    If the environment variable constants.ENV_SANIC_WORKERS is set and is not equal to
-    1, that value will only be permitted if the used lock store supports shared
-    resources across multiple workers (e.g. ``RedisLockStore``).
-    """
-
-    def _log_and_get_default_number_of_workers():
-        logger.debug(
-            f"Using the default number of Sanic workers ({DEFAULT_SANIC_WORKERS})."
-        )
-        return DEFAULT_SANIC_WORKERS
-
-    try:
-        env_value = int(os.environ.get(ENV_SANIC_WORKERS, DEFAULT_SANIC_WORKERS))
-    except ValueError:
-        logger.error(
-            f"Cannot convert environment variable `{ENV_SANIC_WORKERS}` "
-            f"to int ('{os.environ[ENV_SANIC_WORKERS]}')."
-        )
-        return _log_and_get_default_number_of_workers()
-
-    if env_value == DEFAULT_SANIC_WORKERS:
-        return _log_and_get_default_number_of_workers()
-
-    if env_value < 1:
-        logger.debug(
-            f"Cannot set number of Sanic workers to the desired value "
-            f"({env_value}). The number of workers must be at least 1."
-        )
-        return _log_and_get_default_number_of_workers()
-
-    if _lock_store_is_redis_lock_store(lock_store):
-        logger.debug(f"Using {env_value} Sanic workers.")
-        return env_value
-
-    logger.debug(
-        f"Unable to assign desired number of Sanic workers ({env_value}) as "
-        f"no `RedisLockStore` endpoint configuration has been found."
-    )
-    return _log_and_get_default_number_of_workers()
+    def is_someone_waiting(self) -> bool:
+        """Check if a coroutine is waiting for this lock to be freed."""
+        return self.wait_counter != 0

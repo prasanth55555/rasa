@@ -62,7 +62,7 @@ def concat_url(base: Text, subpath: Optional[Text]) -> Text:
     return url + subpath
 
 
-class EndpointConfig:
+class EndpointConfig(object):
     """Configuration for an external HTTP endpoint."""
 
     def __init__(
@@ -73,7 +73,7 @@ class EndpointConfig:
         basic_auth: Dict[Text, Text] = None,
         token: Optional[Text] = None,
         token_name: Text = "token",
-        **kwargs,
+        **kwargs
     ):
         self.url = url
         self.params = params if params else {}
@@ -84,7 +84,7 @@ class EndpointConfig:
         self.type = kwargs.pop("store_type", kwargs.pop("type", None))
         self.kwargs = kwargs
 
-    def session(self) -> aiohttp.ClientSession:
+    def session(self):
         # create authentication parameters
         if self.basic_auth:
             auth = aiohttp.BasicAuth(
@@ -99,9 +99,7 @@ class EndpointConfig:
             timeout=aiohttp.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT),
         )
 
-    def combine_parameters(
-        self, kwargs: Optional[Dict[Text, Any]] = None
-    ) -> Dict[Text, Any]:
+    def combine_parameters(self, kwargs=None):
         # construct GET parameters
         params = self.params.copy()
 
@@ -120,7 +118,7 @@ class EndpointConfig:
         subpath: Optional[Text] = None,
         content_type: Optional[Text] = "application/json",
         return_method: Text = "json",
-        **kwargs: Any,
+        **kwargs: Any
     ):
         """Send a HTTP request to the endpoint.
 
@@ -143,7 +141,7 @@ class EndpointConfig:
                 url,
                 headers=headers,
                 params=self.combine_parameters(kwargs),
-                **kwargs,
+                **kwargs
             ) as resp:
                 if resp.status >= 400:
                     raise ClientResponseError(
@@ -152,10 +150,10 @@ class EndpointConfig:
                 return await getattr(resp, return_method)()
 
     @classmethod
-    def from_dict(cls, data) -> "EndpointConfig":
+    def from_dict(cls, data):
         return EndpointConfig(**data)
 
-    def copy(self) -> "EndpointConfig":
+    def copy(self):
         return EndpointConfig(
             self.url,
             self.params,
@@ -163,10 +161,10 @@ class EndpointConfig:
             self.basic_auth,
             self.token,
             self.token_name,
-            **self.kwargs,
+            **self.kwargs
         )
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other):
         if isinstance(self, type(other)):
             return (
                 other.url == self.url
@@ -179,16 +177,16 @@ class EndpointConfig:
         else:
             return False
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, other):
         return not self.__eq__(other)
 
 
 class ClientResponseError(aiohttp.ClientError):
-    def __init__(self, status: int, message: Text, text: Text) -> None:
+    def __init__(self, status, message, text):
         self.status = status
         self.message = message
         self.text = text
-        super().__init__(f"{status}, {message}, body='{text}'")
+        super().__init__("{}, {}, body='{}'".format(status, message, text))
 
 
 def bool_arg(request: Request, name: Text, default: bool = True) -> bool:
@@ -216,5 +214,5 @@ def float_arg(
     try:
         return float(str(arg))
     except (ValueError, TypeError):
-        logger.warning(f"Failed to convert '{arg}' to float.")
+        logger.warning("Failed to convert '{}' to float.".format(arg))
         return default

@@ -9,7 +9,7 @@ class InvalidYamlFileError(ValueError):
     """Raised if an invalid yaml file was provided."""
 
     def __init__(self, message: Text) -> None:
-        super().__init__(message)
+        super(InvalidYamlFileError, self).__init__(message)
 
 
 def validate_yaml_schema(

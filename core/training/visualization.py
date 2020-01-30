@@ -1,7 +1,8 @@
 from collections import defaultdict, deque
 
 import random
-from typing import Any, Text, List, Dict, Optional, TYPE_CHECKING, Set
+import re
+from typing import Any, Text, List, Dict, Optional, TYPE_CHECKING
 
 from rasa.core.actions.action import ACTION_LISTEN_NAME
 from rasa.core.domain import Domain
@@ -23,14 +24,14 @@ TMP_NODE_ID = -2
 VISUALIZATION_TEMPLATE_PATH = "/visualization.html"
 
 
-class UserMessageGenerator:
-    def __init__(self, nlu_training_data) -> None:
+class UserMessageGenerator(object):
+    def __init__(self, nlu_training_data):
         self.nlu_training_data = nlu_training_data
         self.mapping = self._create_reverse_mapping(self.nlu_training_data)
 
     @staticmethod
     def _create_reverse_mapping(
-        data: "TrainingData",
+        data: "TrainingData"
     ) -> Dict[Dict[Text, Any], List["Message"]]:
         """Create a mapping from intent to messages
 
@@ -43,12 +44,12 @@ class UserMessageGenerator:
         return d
 
     @staticmethod
-    def _contains_same_entity(entities, e) -> bool:
+    def _contains_same_entity(entities, e):
         return entities.get(e.get("entity")) is None or entities.get(
             e.get("entity")
         ) != e.get("value")
 
-    def message_for_data(self, structured_info) -> Any:
+    def message_for_data(self, structured_info):
         """Find a data sample with the same intent and entities.
 
         Given the parsed data from a message (intent and entities) finds a
@@ -70,7 +71,7 @@ class UserMessageGenerator:
         return structured_info.get("text")
 
 
-def _fingerprint_node(graph, node, max_history) -> Set[Text]:
+def _fingerprint_node(graph, node, max_history):
     """Fingerprint a node in a graph.
 
     Can be used to identify nodes that are similar and can be merged within the
@@ -107,20 +108,20 @@ def _fingerprint_node(graph, node, max_history) -> Set[Text]:
         if empty:
             continuations.append(candidate)
     return {
-        " - ".join([graph.nodes[node]["label"] for node in continuation])
+        " - ".join([graph.node[node]["label"] for node in continuation])
         for continuation in continuations
     }
 
 
-def _incoming_edges(graph, node) -> set:
+def _incoming_edges(graph, node):
     return {(prev_node, k) for prev_node, _, k in graph.in_edges(node, keys=True)}
 
 
-def _outgoing_edges(graph, node) -> set:
+def _outgoing_edges(graph, node):
     return {(succ_node, k) for _, succ_node, k in graph.out_edges(node, keys=True)}
 
 
-def _outgoing_edges_are_similar(graph, node_a, node_b) -> bool:
+def _outgoing_edges_are_similar(graph, node_a, node_b):
     """If the outgoing edges from the two nodes are similar enough,
     it doesn't matter if you are in a or b.
 
@@ -141,9 +142,9 @@ def _outgoing_edges_are_similar(graph, node_a, node_b) -> bool:
     return a_edges == b_edges or not a_edges or not b_edges
 
 
-def _nodes_are_equivalent(graph, node_a, node_b, max_history) -> bool:
+def _nodes_are_equivalent(graph, node_a, node_b, max_history):
     """Decides if two nodes are equivalent based on their fingerprints."""
-    return graph.nodes[node_a]["label"] == graph.nodes[node_b]["label"] and (
+    return graph.node[node_a]["label"] == graph.node[node_b]["label"] and (
         _outgoing_edges_are_similar(graph, node_a, node_b)
         or _incoming_edges(graph, node_a) == _incoming_edges(graph, node_b)
         or _fingerprint_node(graph, node_a, max_history)
@@ -151,7 +152,7 @@ def _nodes_are_equivalent(graph, node_a, node_b, max_history) -> bool:
     )
 
 
-def _add_edge(graph, u, v, key, label=None, **kwargs) -> None:
+def _add_edge(graph, u, v, key, label=None, **kwargs):
     """Adds an edge to the graph if the edge is not already present. Uses the
     label as the key."""
 
@@ -168,7 +169,7 @@ def _add_edge(graph, u, v, key, label=None, **kwargs) -> None:
         _transfer_style(kwargs, d)
 
 
-def _transfer_style(source, target: Dict[Text, Any]) -> Dict[Text, Any]:
+def _transfer_style(source, target):
     """Copy over class names from source to target for all special classes.
 
     Used if a node is highlighted and merged with another node."""
@@ -188,7 +189,7 @@ def _transfer_style(source, target: Dict[Text, Any]) -> Dict[Text, Any]:
     return target
 
 
-def _merge_equivalent_nodes(graph, max_history) -> None:
+def _merge_equivalent_nodes(graph, max_history):
     """Searches for equivalent nodes in the graph and merges them."""
 
     changed = True
@@ -222,7 +223,7 @@ def _merge_equivalent_nodes(graph, max_history) -> None:
                                 succ_node,
                                 k,
                                 d.get("label"),
-                                **{"class": d.get("class", "")},
+                                **{"class": d.get("class", "")}
                             )
                             graph.remove_edge(j, succ_node)
                         # moves all incoming edges to the other node
@@ -234,7 +235,7 @@ def _merge_equivalent_nodes(graph, max_history) -> None:
                                 i,
                                 k,
                                 d.get("label"),
-                                **{"class": d.get("class", "")},
+                                **{"class": d.get("class", "")}
                             )
                             graph.remove_edge(prev_node, j)
                         graph.remove_node(j)
@@ -242,7 +243,7 @@ def _merge_equivalent_nodes(graph, max_history) -> None:
 
 async def _replace_edge_labels_with_nodes(
     graph, next_id, interpreter, nlu_training_data
-) -> None:
+):
     """User messages are created as edge labels. This removes the labels and
     creates nodes instead.
 
@@ -268,39 +269,39 @@ async def _replace_edge_labels_with_nodes(
             graph.remove_edge(s, e, k)
             graph.add_node(
                 next_id,
-                label=label,
+                label=sanitize(label),
                 shape="rect",
                 style="filled",
                 fillcolor="lightblue",
-                **_transfer_style(d, {"class": "intent"}),
+                **_transfer_style(d, {"class": "intent"})
             )
             graph.add_edge(s, next_id, **{"class": d.get("class", "")})
             graph.add_edge(next_id, e, **{"class": d.get("class", "")})
 
 
-def visualization_html_path() -> Text:
+def visualization_html_path():
     import pkg_resources
 
     return pkg_resources.resource_filename(__name__, VISUALIZATION_TEMPLATE_PATH)
 
 
-def persist_graph(graph: "networkx.Graph", output_file: Text) -> None:
+def persist_graph(graph, output_file):
     """Plots the graph and persists it into a html file."""
     import networkx as nx
-    import rasa.utils.io as io_utils
 
     expg = nx.nx_pydot.to_pydot(graph)
 
-    template = io_utils.read_file(visualization_html_path())
+    with open(visualization_html_path(), "r") as file:
+        template = file.read()
 
-    # Insert graph into template
+    # customize content of template by replacing tags
     template = template.replace("// { is-client }", "isClient = true", 1)
-    graph_as_text = expg.to_string()
-    # escape backslashes
-    graph_as_text = graph_as_text.replace("\\", "\\\\")
-    template = template.replace("// { graph-content }", f"graph = `{graph_as_text}`", 1)
+    template = template.replace(
+        "// { graph-content }", "graph = `{}`".format(expg.to_string()), 1
+    )
 
-    io_utils.write_text_file(template, output_file)
+    with open(output_file, "w", encoding="utf-8") as file:
+        file.write(template)
 
 
 def _length_of_common_action_prefix(this: List[Event], other: List[Event]) -> int:
@@ -335,7 +336,7 @@ def _add_default_nodes(graph: "networkx.MultiDiGraph", fontsize: int = 12) -> No
         fillcolor="green",
         style="filled",
         fontsize=fontsize,
-        **{"class": "start active"},
+        **{"class": "start active"}
     )
     graph.add_node(
         END_NODE_ID,
@@ -343,7 +344,7 @@ def _add_default_nodes(graph: "networkx.MultiDiGraph", fontsize: int = 12) -> No
         fillcolor="red",
         style="filled",
         fontsize=fontsize,
-        **{"class": "end"},
+        **{"class": "end"}
     )
     graph.add_node(TMP_NODE_ID, label="TMP", style="invis", **{"class": "invisible"})
 
@@ -356,6 +357,13 @@ def _create_graph(fontsize: int = 12) -> "networkx.MultiDiGraph":
     graph = nx.MultiDiGraph()
     _add_default_nodes(graph, fontsize)
     return graph
+
+
+def sanitize(s):
+    if s:
+        return re.escape(s)
+    else:
+        return s
 
 
 def _add_message_edge(
@@ -380,7 +388,7 @@ def _add_message_edge(
         next_node_idx,
         message_key,
         message_label,
-        **{"class": "active" if is_current else ""},
+        **{"class": "active" if is_current else ""}
     )
 
 
@@ -432,7 +440,7 @@ async def visualize_neighborhood(
                     next_node_idx,
                     label=el.action_name,
                     fontsize=fontsize,
-                    **{"class": "active" if is_current else ""},
+                    **{"class": "active" if is_current else ""}
                 )
 
                 _add_message_edge(
@@ -456,9 +464,9 @@ async def visualize_neighborhood(
                     next_node_idx,
                     label="  ?  "
                     if not message
-                    else message.get("intent", {}).get("name", "  ?  "),
+                    else sanitize(message.get("intent", {}).get("name", "  ?  ")),
                     shape="rect",
-                    **{"class": "intent dashed active"},
+                    **{"class": "intent dashed active"}
                 )
                 target = next_node_idx
             elif current_node:

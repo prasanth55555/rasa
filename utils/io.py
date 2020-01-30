@@ -1,30 +1,26 @@
 import asyncio
 import errno
-import json
 import logging
 import os
 import tarfile
 import tempfile
-import typing
 import warnings
 import zipfile
-import glob
 from asyncio import AbstractEventLoop
-from io import BytesIO as IOReader
-from pathlib import Path
 from typing import Text, Any, Dict, Union, List, Type, Callable
-
 import ruamel.yaml as yaml
+from io import BytesIO as IOReader
+
+import simplejson
+import typing
 
 from rasa.constants import ENV_LOG_LEVEL, DEFAULT_LOG_LEVEL
 
 if typing.TYPE_CHECKING:
     from prompt_toolkit.validation import Validator
 
-DEFAULT_ENCODING = "utf-8"
 
-
-def configure_colored_logging(loglevel: Text) -> None:
+def configure_colored_logging(loglevel):
     import coloredlogs
 
     loglevel = loglevel or os.environ.get(ENV_LOG_LEVEL, DEFAULT_LOG_LEVEL)
@@ -42,9 +38,7 @@ def configure_colored_logging(loglevel: Text) -> None:
     )
 
 
-def enable_async_loop_debugging(
-    event_loop: AbstractEventLoop, slow_callback_duration: float = 0.1
-) -> AbstractEventLoop:
+def enable_async_loop_debugging(event_loop: AbstractEventLoop) -> AbstractEventLoop:
     logging.info(
         "Enabling coroutine debugging. Loop id {}.".format(id(asyncio.get_event_loop()))
     )
@@ -54,7 +48,7 @@ def enable_async_loop_debugging(
 
     # Make the threshold for "slow" tasks very very small for
     # illustration. The default is 0.1 (= 100 milliseconds).
-    event_loop.slow_callback_duration = slow_callback_duration
+    event_loop.slow_callback_duration = 0.001
 
     # Report all mistakes managing asynchronous resources.
     warnings.simplefilter("always", ResourceWarning)
@@ -73,7 +67,7 @@ def fix_yaml_loader() -> None:
     yaml.SafeLoader.add_constructor("tag:yaml.org,2002:str", construct_yaml_str)
 
 
-def replace_environment_variables() -> None:
+def replace_environment_variables():
     """Enable yaml loader to process the environment variables in the yaml."""
     import re
     import os
@@ -105,7 +99,6 @@ def read_yaml(content: Text) -> Union[List[Any], Dict[Text, Any]]:
         content: A text containing yaml content.
     """
     fix_yaml_loader()
-
     replace_environment_variables()
 
     yaml_parser = yaml.YAML(typ="safe")
@@ -129,32 +122,26 @@ def read_yaml(content: Text) -> Union[List[Any], Dict[Text, Any]]:
         return yaml_parser.load(content) or {}
 
 
-def read_file(filename: Text, encoding: Text = DEFAULT_ENCODING) -> Any:
+def read_file(filename: Text, encoding: Text = "utf-8") -> Any:
     """Read text from a file."""
 
     try:
         with open(filename, encoding=encoding) as f:
             return f.read()
     except FileNotFoundError:
-        raise ValueError(f"File '{filename}' does not exist.")
+        raise ValueError("File '{}' does not exist.".format(filename))
 
 
 def read_json_file(filename: Text) -> Any:
     """Read json from a file."""
     content = read_file(filename)
     try:
-        return json.loads(content)
+        return simplejson.loads(content)
     except ValueError as e:
         raise ValueError(
             "Failed to read json from '{}'. Error: "
             "{}".format(os.path.abspath(filename), e)
         )
-
-
-def dump_obj_as_json_to_file(filename: Text, obj: Any) -> None:
-    """Dump an object as a json string to a file."""
-
-    write_text_file(json.dumps(obj, indent=2), filename)
 
 
 def read_config_file(filename: Text) -> Dict[Text, Any]:
@@ -163,7 +150,7 @@ def read_config_file(filename: Text) -> Dict[Text, Any]:
      Args:
         filename: The path to the file which should be read.
     """
-    content = read_yaml(read_file(filename))
+    content = read_yaml(read_file(filename, "utf-8"))
 
     if content is None:
         return {}
@@ -183,7 +170,7 @@ def read_yaml_file(filename: Text) -> Union[List[Any], Dict[Text, Any]]:
      Args:
         filename: The path to the file which should be read.
     """
-    return read_yaml(read_file(filename, DEFAULT_ENCODING))
+    return read_yaml(read_file(filename, "utf-8"))
 
 
 def unarchive(byte_array: bytes, directory: Text) -> Text:
@@ -203,35 +190,15 @@ def unarchive(byte_array: bytes, directory: Text) -> Text:
         return directory
 
 
-def write_yaml_file(data: Dict, filename: Union[Text, Path]) -> None:
+def write_yaml_file(data: Dict, filename: Text):
     """Writes a yaml file.
 
      Args:
         data: The data to write.
         filename: The path to the file which should be written.
     """
-    with open(str(filename), "w", encoding=DEFAULT_ENCODING) as outfile:
-        yaml.dump(data, outfile, default_flow_style=False, allow_unicode=True)
-
-
-def write_text_file(
-    content: Text,
-    file_path: Union[Text, Path],
-    encoding: Text = DEFAULT_ENCODING,
-    append: bool = False,
-) -> None:
-    """Writes text to a file.
-
-    Args:
-        content: The content to write.
-        file_path: The path to which the content should be written.
-        encoding: The encoding which should be used.
-        append: Whether to append to the file or to truncate the file.
-
-    """
-    mode = "a" if append else "w"
-    with open(file_path, mode, encoding=encoding) as file:
-        file.write(content)
+    with open(filename, "w", encoding="utf-8") as outfile:
+        yaml.dump(data, outfile, default_flow_style=False)
 
 
 def is_subdirectory(path: Text, potential_parent_directory: Text) -> bool:
@@ -249,7 +216,7 @@ def create_temporary_file(data: Any, suffix: Text = "", mode: Text = "w+") -> Te
 
     mode defines NamedTemporaryFile's  mode parameter in py3."""
 
-    encoding = None if "b" in mode else DEFAULT_ENCODING
+    encoding = None if "b" in mode else "utf-8"
     f = tempfile.NamedTemporaryFile(
         mode=mode, suffix=suffix, delete=False, encoding=encoding
     )
@@ -259,7 +226,7 @@ def create_temporary_file(data: Any, suffix: Text = "", mode: Text = "w+") -> Te
     return f.name
 
 
-def create_path(file_path: Text) -> None:
+def create_path(file_path: Text):
     """Makes sure all directories in the 'file_path' exists."""
 
     parent_dir = os.path.dirname(os.path.abspath(file_path))
@@ -267,10 +234,27 @@ def create_path(file_path: Text) -> None:
         os.makedirs(parent_dir)
 
 
+def zip_folder(folder: Text) -> Text:
+    """Create an archive from a folder."""
+    import tempfile
+    import shutil
+
+    zipped_path = tempfile.NamedTemporaryFile(delete=False)
+    zipped_path.close()
+
+    # WARN: not thread save!
+    return shutil.make_archive(zipped_path.name, str("zip"), folder)
+
+
 def create_directory_for_file(file_path: Text) -> None:
     """Creates any missing parent directories of this file path."""
 
-    create_directory(os.path.dirname(file_path))
+    try:
+        os.makedirs(os.path.dirname(file_path))
+    except OSError as e:
+        # be happy if someone already created the path
+        if e.errno != errno.EEXIST:
+            raise
 
 
 def file_type_validator(
@@ -316,81 +300,3 @@ def create_validator(
                 raise ValidationError(message=error_message)
 
     return FunctionValidator
-
-
-def list_files(path: Text) -> List[Text]:
-    """Returns all files excluding hidden files.
-
-    If the path points to a file, returns the file."""
-
-    return [fn for fn in list_directory(path) if os.path.isfile(fn)]
-
-
-def list_subdirectories(path: Text) -> List[Text]:
-    """Returns all folders excluding hidden files.
-
-    If the path points to a file, returns an empty list."""
-
-    return [fn for fn in glob.glob(os.path.join(path, "*")) if os.path.isdir(fn)]
-
-
-def _filename_without_prefix(file: Text) -> Text:
-    """Splits of a filenames prefix until after the first ``_``."""
-    return "_".join(file.split("_")[1:])
-
-
-def list_directory(path: Text) -> List[Text]:
-    """Returns all files and folders excluding hidden files.
-
-    If the path points to a file, returns the file. This is a recursive
-    implementation returning files in any depth of the path."""
-
-    if not isinstance(path, str):
-        raise ValueError(
-            "`resource_name` must be a string type. "
-            "Got `{}` instead".format(type(path))
-        )
-
-    if os.path.isfile(path):
-        return [path]
-    elif os.path.isdir(path):
-        results = []
-        for base, dirs, files in os.walk(path):
-            # sort files for same order across runs
-            files = sorted(files, key=_filename_without_prefix)
-            # add not hidden files
-            good_files = filter(lambda x: not x.startswith("."), files)
-            results.extend(os.path.join(base, f) for f in good_files)
-            # add not hidden directories
-            good_directories = filter(lambda x: not x.startswith("."), dirs)
-            results.extend(os.path.join(base, f) for f in good_directories)
-        return results
-    else:
-        raise ValueError(
-            "Could not locate the resource '{}'.".format(os.path.abspath(path))
-        )
-
-
-def create_directory(directory_path: Text) -> None:
-    """Creates a directory and its super paths.
-
-    Succeeds even if the path already exists."""
-
-    try:
-        os.makedirs(directory_path)
-    except OSError as e:
-        # be happy if someone already created the path
-        if e.errno != errno.EEXIST:
-            raise
-
-
-def zip_folder(folder: Text) -> Text:
-    """Create an archive from a folder."""
-    import tempfile
-    import shutil
-
-    zipped_path = tempfile.NamedTemporaryFile(delete=False)
-    zipped_path.close()
-
-    # WARN: not thread-safe!
-    return shutil.make_archive(zipped_path.name, "zip", folder)

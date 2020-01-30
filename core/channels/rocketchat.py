@@ -1,26 +1,25 @@
 import logging
 from sanic import Blueprint, response
 from sanic.request import Request
-from typing import Text, Dict, Any, List, Iterable, Optional, Callable, Awaitable
+from typing import Text, Dict, Any, List, Iterable
 
 from rasa.core.channels.channel import UserMessage, OutputChannel, InputChannel
-from sanic.response import HTTPResponse
 
 logger = logging.getLogger(__name__)
 
 
 class RocketChatBot(OutputChannel):
     @classmethod
-    def name(cls) -> Text:
+    def name(cls):
         return "rocketchat"
 
-    def __init__(self, user, password, server_url) -> None:
+    def __init__(self, user, password, server_url):
         from rocketchat_API.rocketchat import RocketChat
 
         self.rocket = RocketChat(user, password, server_url=server_url)
 
     @staticmethod
-    def _convert_to_rocket_buttons(buttons: List[Dict]) -> List[Dict]:
+    def _convert_to_rocket_buttons(buttons):
         return [
             {
                 "text": b["title"],
@@ -60,7 +59,7 @@ class RocketChatBot(OutputChannel):
         recipient_id: Text,
         text: Text,
         buttons: List[Dict[Text, Any]],
-        **kwargs: Any,
+        **kwargs: Any
     ) -> None:
         # implementation is based on
         # https://github.com/RocketChat/Rocket.Chat/pull/11473
@@ -86,8 +85,7 @@ class RocketChatBot(OutputChannel):
         if json_message.get("channel"):
             if json_message.get("room_id"):
                 logger.warning(
-                    "Only one of `channel` or `room_id` can be passed to a RocketChat "
-                    "message post. Defaulting to `channel`."
+                    "Only one of `channel` or `room_id` can be passed to a RocketChat message post. Defaulting to `channel`."
                 )
                 del json_message["room_id"]
             return self.rocket.chat_post_message(text, **json_message)
@@ -100,21 +98,19 @@ class RocketChatInput(InputChannel):
     """RocketChat input channel implementation."""
 
     @classmethod
-    def name(cls) -> Text:
+    def name(cls):
         return "rocketchat"
 
     @classmethod
-    def from_credentials(cls, credentials: Optional[Dict[Text, Any]]) -> InputChannel:
+    def from_credentials(cls, credentials):
         if not credentials:
             cls.raise_missing_credentials_exception()
 
-        # pytype: disable=attribute-error
         return cls(
             credentials.get("user"),
             credentials.get("password"),
             credentials.get("server_url"),
         )
-        # pytype: enable=attribute-error
 
     def __init__(self, user: Text, password: Text, server_url: Text) -> None:
 
@@ -122,39 +118,25 @@ class RocketChatInput(InputChannel):
         self.password = password
         self.server_url = server_url
 
-    async def send_message(
-        self,
-        text: Optional[Text],
-        sender_name: Optional[Text],
-        recipient_id: Optional[Text],
-        on_new_message: Callable[[UserMessage], Awaitable[Any]],
-        metadata: Optional[Dict],
-    ):
+    async def send_message(self, text, sender_name, recipient_id, on_new_message):
         if sender_name != self.user:
-            output_channel = self.get_output_channel()
+            output_channel = RocketChatBot(self.user, self.password, self.server_url)
 
             user_msg = UserMessage(
-                text,
-                output_channel,
-                recipient_id,
-                input_channel=self.name(),
-                metadata=metadata,
+                text, output_channel, recipient_id, input_channel=self.name()
             )
             await on_new_message(user_msg)
 
-    def blueprint(
-        self, on_new_message: Callable[[UserMessage], Awaitable[Any]]
-    ) -> Blueprint:
+    def blueprint(self, on_new_message):
         rocketchat_webhook = Blueprint("rocketchat_webhook", __name__)
 
         @rocketchat_webhook.route("/", methods=["GET"])
-        async def health(_: Request) -> HTTPResponse:
+        async def health(request: Request):
             return response.json({"status": "ok"})
 
         @rocketchat_webhook.route("/webhook", methods=["GET", "POST"])
-        async def webhook(request: Request) -> HTTPResponse:
+        async def webhook(request: Request):
             output = request.json
-            metadata = self.get_metadata(request)
             if output:
                 if "visitor" not in output:
                     sender_name = output.get("user_name", None)
@@ -166,13 +148,8 @@ class RocketChatInput(InputChannel):
                     sender_name = messages_list[0].get("username", None)
                     recipient_id = output.get("_id")
 
-                await self.send_message(
-                    text, sender_name, recipient_id, on_new_message, metadata
-                )
+                await self.send_message(text, sender_name, recipient_id, on_new_message)
 
             return response.text("")
 
         return rocketchat_webhook
-
-    def get_output_channel(self) -> OutputChannel:
-        return RocketChatBot(self.user, self.password, self.server_url)

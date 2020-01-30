@@ -1,13 +1,11 @@
 import argparse
 import asyncio
-import sys
 from typing import List
 
 from rasa import data
 from rasa.cli.arguments import data as arguments
 from rasa.cli.utils import get_validated_path
 from rasa.constants import DEFAULT_DATA_PATH
-from typing import NoReturn
 
 
 # noinspection PyProtectedMember
@@ -75,7 +73,7 @@ def add_subparser(
     arguments.set_validator_arguments(validate_parser)
 
 
-def split_nlu_data(args) -> None:
+def split_nlu_data(args):
     from rasa.nlu.training_data.loading import load_data
     from rasa.nlu.training_data.util import get_file_format
 
@@ -85,28 +83,19 @@ def split_nlu_data(args) -> None:
     nlu_data = load_data(data_path)
     fformat = get_file_format(data_path)
 
-    train, test = nlu_data.train_test_split(args.training_fraction, args.random_seed)
+    train, test = nlu_data.train_test_split(args.training_fraction)
 
-    train.persist(args.out, filename=f"training_data.{fformat}")
-    test.persist(args.out, filename=f"test_data.{fformat}")
+    train.persist(args.out, filename="training_data.{}".format(fformat))
+    test.persist(args.out, filename="test_data.{}".format(fformat))
 
 
-def validate_files(args) -> NoReturn:
-    """Validate all files needed for training a model.
-
-    Fails with a non-zero exit code if there are any errors in the data."""
+def validate_files(args):
     from rasa.core.validator import Validator
-    from rasa.importers.rasa import RasaFileImporter
 
     loop = asyncio.get_event_loop()
-    file_importer = RasaFileImporter(
-        domain_path=args.domain, training_data_paths=args.data
+
+    story_directory, nlu_data_directory = data.get_core_nlu_directories(args.data)
+    validator = loop.run_until_complete(
+        Validator.from_files(args.domain, nlu_data_directory, story_directory)
     )
-
-    validator = loop.run_until_complete(Validator.from_importer(file_importer))
-    domain_is_valid = validator.verify_domain_validity()
-    if not domain_is_valid:
-        sys.exit(1)
-
-    everything_is_alright = validator.verify_all(not args.fail_on_warnings)
-    sys.exit(0) if everything_is_alright else sys.exit(1)
+    validator.verify_all()

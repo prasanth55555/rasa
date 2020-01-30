@@ -22,7 +22,6 @@ def set_train_arguments(parser: argparse.ArgumentParser):
     add_dump_stories_param(parser)
 
     add_model_name_param(parser)
-    add_persist_nlu_data_param(parser)
     add_force_param(parser)
 
 
@@ -51,7 +50,6 @@ def set_train_nlu_arguments(parser: argparse.ArgumentParser):
     add_nlu_data_param(parser, help_text="File or folder containing your NLU data.")
 
     add_model_name_param(parser)
-    add_persist_nlu_data_param(parser)
 
 
 def add_force_param(parser: Union[argparse.ArgumentParser, argparse._ActionsContainer]):
@@ -90,7 +88,7 @@ def add_compare_params(
         "--percentages",
         nargs="*",
         type=int,
-        default=[0, 25, 50, 75],
+        default=[0, 5, 25, 50, 70, 90, 95],
         help="Range of exclusion percentages.",
     )
     parser.add_argument(
@@ -139,14 +137,4 @@ def add_model_name_param(parser: argparse.ArgumentParser):
         type=str,
         help="If set, the name of the model file/directory will be set to the given "
         "name.",
-    )
-
-
-def add_persist_nlu_data_param(
-    parser: Union[argparse.ArgumentParser, argparse._ActionsContainer]
-):
-    parser.add_argument(
-        "--persist-nlu-data",
-        action="store_true",
-        help="Persist the nlu training data in the saved model.",
     )

@@ -1,4 +1,5 @@
 import os
+import pkg_resources
 
 DEFAULT_ENDPOINTS_PATH = "endpoints.yml"
 DEFAULT_CREDENTIALS_PATH = "credentials.yml"
@@ -9,14 +10,11 @@ DEFAULT_MODELS_PATH = "models"
 DEFAULT_DATA_PATH = "data"
 DEFAULT_RESULTS_PATH = "results"
 DEFAULT_NLU_RESULTS_PATH = "nlu_comparison_results"
-DEFAULT_CORE_SUBDIRECTORY_NAME = "core"
 DEFAULT_REQUEST_TIMEOUT = 60 * 5  # 5 minutes
 
 TEST_DATA_FILE = "test.md"
 TRAIN_DATA_FILE = "train.md"
 RESULTS_FILE = "results.json"
-NUMBER_OF_TRAINING_STORIES_FILE = "num_stories.json"
-PERCENTAGE_KEY = "__percentage__"
 
 PACKAGE_NAME = "rasa"
 
@@ -27,23 +25,16 @@ DEFAULT_RASA_X_PORT = 5002
 DEFAULT_RASA_PORT = 5005
 
 DOCS_BASE_URL = "https://rasa.com/docs/rasa"
-DOCS_URL_POLICIES = DOCS_BASE_URL + "/core/policies/"
-DOCS_URL_DOMAINS = DOCS_BASE_URL + "/core/domains/"
-DOCS_URL_STORIES = DOCS_BASE_URL + "/core/stories/"
-DOCS_URL_ACTIONS = DOCS_BASE_URL + "/core/actions/"
-DOCS_URL_EVENT_BROKERS = DOCS_BASE_URL + "/api/event-brokers/"
-DOCS_URL_PIPELINE = DOCS_BASE_URL + "/nlu/choosing-a-pipeline/"
-DOCS_URL_COMPONENTS = DOCS_BASE_URL + "/nlu/components/"
-DOCS_URL_TRAINING_DATA_NLU = DOCS_BASE_URL + "/nlu/training-data-format/"
-DOCS_URL_MIGRATE_GOOGLE = DOCS_BASE_URL + "/migrate-from/google-dialogflow-to-rasa/"
-
 LEGACY_DOCS_BASE_URL = "http://legacy-docs.rasa.com"
 
+FALLBACK_CONFIG_PATH = pkg_resources.resource_filename(
+    __name__, "cli/default_config.yml"
+)
 CONFIG_MANDATORY_KEYS_CORE = ["policies"]
 CONFIG_MANDATORY_KEYS_NLU = ["language", "pipeline"]
 CONFIG_MANDATORY_KEYS = CONFIG_MANDATORY_KEYS_CORE + CONFIG_MANDATORY_KEYS_NLU
 
-MINIMUM_COMPATIBLE_VERSION = "1.6.0a2"
+MINIMUM_COMPATIBLE_VERSION = "1.0.0rc1"
 
 GLOBAL_USER_CONFIG_PATH = os.path.expanduser("~/.config/rasa/global.yml")
 
@@ -52,10 +43,3 @@ DEFAULT_LOG_LEVEL_RASA_X = "WARNING"
 DEFAULT_LOG_LEVEL_LIBRARIES = "ERROR"
 ENV_LOG_LEVEL = "LOG_LEVEL"
 ENV_LOG_LEVEL_LIBRARIES = "LOG_LEVEL_LIBRARIES"
-
-DEFAULT_SANIC_WORKERS = 1
-ENV_SANIC_WORKERS = "SANIC_WORKERS"
-ENV_SANIC_BACKLOG = "SANIC_BACKLOG"
-
-DEFAULT_SESSION_EXPIRATION_TIME_IN_MINUTES = 60
-DEFAULT_CARRY_OVER_SLOTS_TO_NEW_SESSION = True
