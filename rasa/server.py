@@ -962,7 +962,7 @@ def create_app(
                     entityArray.append(data)
                 elif data["name"] == 'type' or data["name"] == 'timeline' or data[
                     "name"] == 'mtype' or data["name"] == 'renew' or data["name"] == 'renewAll' or data[
-                    "name"] == "cancelhold" or data["name"] == 'type' or data['name'] == 'reserve':
+                    "name"] == "cancelhold" or data["name"] == 'type' or data['name'] == 'reserve' or data['name'] == 'lang' or data['name'] == 'library':
                     data["name"] = data["name"].lower()
                     entityArray.append(data)
                 elif data["name"] == "pubyear":
