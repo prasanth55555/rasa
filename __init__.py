@@ -1,9 +1,9 @@
 import logging
 
-from rasa import version
+import rasa.version
 
 # define the version before the other imports since these need it
-__version__ = version.__version__
+__version__ = rasa.version.__version__
 
 from rasa.run import run
 from rasa.train import train

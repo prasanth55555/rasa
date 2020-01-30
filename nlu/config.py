@@ -1,14 +1,12 @@
 import copy
 import logging
-import warnings
 import os
 import ruamel.yaml as yaml
-from typing import Any, Dict, List, Optional, Text, Union, Tuple
+from typing import Any, Dict, List, Optional, Text
 
 import rasa.utils.io
-from rasa.constants import DEFAULT_CONFIG_PATH, DOCS_URL_PIPELINE
+from rasa.constants import DEFAULT_CONFIG_PATH
 from rasa.nlu.utils import json_to_string
-from rasa.utils.common import raise_warning
 
 logger = logging.getLogger(__name__)
 
@@ -17,34 +15,27 @@ class InvalidConfigError(ValueError):
     """Raised if an invalid configuration is encountered."""
 
     def __init__(self, message: Text) -> None:
-        super().__init__(message)
+        super(InvalidConfigError, self).__init__(message)
 
 
-def load(
-    config: Optional[Union[Text, Dict]] = None, **kwargs: Any
-) -> "RasaNLUModelConfig":
-    if isinstance(config, Dict):
-        return _load_from_dict(config, **kwargs)
+def load(filename: Optional[Text] = None, **kwargs: Any) -> "RasaNLUModelConfig":
+    if filename is None and os.path.isfile(DEFAULT_CONFIG_PATH):
+        filename = DEFAULT_CONFIG_PATH
 
-    file_config = {}
-    if config is None and os.path.isfile(DEFAULT_CONFIG_PATH):
-        config = DEFAULT_CONFIG_PATH
-
-    if config is not None:
+    if filename is not None:
         try:
-            file_config = rasa.utils.io.read_config_file(config)
+            file_config = rasa.utils.io.read_config_file(filename)
         except yaml.parser.ParserError as e:
             raise InvalidConfigError(
-                f"Failed to read configuration file '{config}'. Error: {e}"
+                "Failed to read configuration file "
+                "'{}'. Error: {}".format(filename, e)
             )
 
-    return _load_from_dict(file_config, **kwargs)
-
-
-def _load_from_dict(config: Dict, **kwargs: Any) -> "RasaNLUModelConfig":
-    if kwargs:
-        config.update(kwargs)
-    return RasaNLUModelConfig(config)
+        if kwargs:
+            file_config.update(kwargs)
+        return RasaNLUModelConfig(file_config)
+    else:
+        return RasaNLUModelConfig(kwargs)
 
 
 def override_defaults(
@@ -69,17 +60,17 @@ def component_config_from_pipeline(
         c = pipeline[index]
         return override_defaults(defaults, c)
     except IndexError:
-        raise_warning(
-            f"Tried to get configuration value for component "
-            f"number {index} which is not part of your pipeline. "
-            f"Returning `defaults`.",
-            docs=DOCS_URL_PIPELINE,
+        logger.warning(
+            "Tried to get configuration value for component "
+            "number {} which is not part of the pipeline. "
+            "Returning `defaults`."
+            "".format(index)
         )
         return override_defaults(defaults, {})
 
 
-class RasaNLUModelConfig:
-    def __init__(self, configuration_values: Optional[Dict[Text, Any]] = None) -> None:
+class RasaNLUModelConfig(object):
+    def __init__(self, configuration_values=None):
         """Create a model configuration, optionally overriding
         defaults with a dictionary ``configuration_values``.
         """
@@ -104,15 +95,12 @@ class RasaNLUModelConfig:
                 "tensorflow_embedding": "supervised_embeddings",
             }
             if template_name in new_names:
-                raise_warning(
-                    f"You have specified the pipeline template "
-                    f"'{template_name}' which has been renamed to "
-                    f"'{new_names[template_name]}'. "
-                    f"Please update your configuration as it will no "
-                    f"longer work with future versions of "
-                    f"Rasa.",
-                    FutureWarning,
-                    docs=DOCS_URL_PIPELINE,
+                logger.warning(
+                    "You have specified the pipeline template "
+                    "'{}' which has been renamed to '{}'. "
+                    "Please update your code as it will no "
+                    "longer work with future versions of "
+                    "Rasa NLU.".format(template_name, new_names[template_name])
                 )
                 template_name = new_names[template_name]
 
@@ -127,67 +115,68 @@ class RasaNLUModelConfig:
                 )
 
                 raise InvalidConfigError(
-                    f"No pipeline specified and unknown "
-                    f"pipeline template '{template_name}' passed. Known "
-                    f"pipeline templates: {known_templates}"
+                    "No pipeline specified and unknown "
+                    "pipeline template '{}' passed. Known "
+                    "pipeline templates: {}"
+                    "".format(template_name, known_templates)
                 )
 
         for key, value in self.items():
             setattr(self, key, value)
 
-    def __getitem__(self, key: Text) -> Any:
+    def __getitem__(self, key):
         return self.__dict__[key]
 
-    def get(self, key: Text, default: Any = None) -> Any:
+    def get(self, key, default=None):
         return self.__dict__.get(key, default)
 
-    def __setitem__(self, key: Text, value: Any) -> None:
+    def __setitem__(self, key, value):
         self.__dict__[key] = value
 
-    def __delitem__(self, key: Text) -> None:
+    def __delitem__(self, key):
         del self.__dict__[key]
 
-    def __contains__(self, key: Text) -> bool:
+    def __contains__(self, key):
         return key in self.__dict__
 
-    def __len__(self) -> int:
+    def __len__(self):
         return len(self.__dict__)
 
-    def __getstate__(self) -> Dict[Text, Any]:
+    def __getstate__(self):
         return self.as_dict()
 
-    def __setstate__(self, state: Dict[Text, Any]) -> None:
+    def __setstate__(self, state):
         self.override(state)
 
-    def items(self) -> List[Any]:
+    def items(self):
         return list(self.__dict__.items())
 
-    def as_dict(self) -> Dict[Text, Any]:
+    def as_dict(self):
         return dict(list(self.items()))
 
-    def view(self) -> Text:
+    def view(self):
         return json_to_string(self.__dict__, indent=4)
 
-    def for_component(self, index, defaults=None) -> Dict[Text, Any]:
+    def for_component(self, index, defaults=None):
         return component_config_from_pipeline(index, self.pipeline, defaults)
 
     @property
-    def component_names(self) -> List[Text]:
+    def component_names(self):
         if self.pipeline:
             return [c.get("name") for c in self.pipeline]
         else:
             return []
 
-    def set_component_attr(self, index, **kwargs) -> None:
+    def set_component_attr(self, index, **kwargs):
         try:
             self.pipeline[index].update(kwargs)
         except IndexError:
-            raise_warning(
-                f"Tried to set configuration value for component "
-                f"number {index} which is not part of the pipeline.",
-                docs=DOCS_URL_PIPELINE,
+            logger.warning(
+                "Tried to set configuration value for component "
+                "number {} which is not part of the pipeline."
+                "".format(index)
             )
 
-    def override(self, config) -> None:
+    def override(self, config):
         if config:
             self.__dict__.update(config)

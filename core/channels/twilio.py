@@ -1,10 +1,10 @@
+# -*- coding: utf-8 -*-
 import logging
 from sanic import Blueprint, response
 from sanic.request import Request
-from sanic.response import HTTPResponse
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
-from typing import Dict, Text, Any, Callable, Awaitable, Optional
+from typing import Dict, Text, Any
 
 from rasa.core.channels.channel import InputChannel
 from rasa.core.channels.channel import UserMessage, OutputChannel
@@ -16,16 +16,11 @@ class TwilioOutput(Client, OutputChannel):
     """Output channel for Twilio"""
 
     @classmethod
-    def name(cls) -> Text:
+    def name(cls):
         return "twilio"
 
-    def __init__(
-        self,
-        account_sid: Optional[Text],
-        auth_token: Optional[Text],
-        twilio_number: Optional[Text],
-    ) -> None:
-        super().__init__(account_sid, auth_token)
+    def __init__(self, account_sid, auth_token, twilio_number):
+        super(TwilioOutput, self).__init__(account_sid, auth_token)
         self.twilio_number = twilio_number
         self.send_retry = 0
         self.max_retry = 5
@@ -74,66 +69,55 @@ class TwilioInput(InputChannel):
     """Twilio input channel"""
 
     @classmethod
-    def name(cls) -> Text:
+    def name(cls):
         return "twilio"
 
     @classmethod
-    def from_credentials(cls, credentials: Optional[Dict[Text, Any]]) -> InputChannel:
+    def from_credentials(cls, credentials):
         if not credentials:
             cls.raise_missing_credentials_exception()
 
-        # pytype: disable=attribute-error
         return cls(
             credentials.get("account_sid"),
             credentials.get("auth_token"),
             credentials.get("twilio_number"),
         )
-        # pytype: enable=attribute-error
 
-    def __init__(
-        self,
-        account_sid: Optional[Text],
-        auth_token: Optional[Text],
-        twilio_number: Optional[Text],
-        debug_mode: bool = True,
-    ) -> None:
+    def __init__(self, account_sid, auth_token, twilio_number, debug_mode=True):
         self.account_sid = account_sid
         self.auth_token = auth_token
         self.twilio_number = twilio_number
         self.debug_mode = debug_mode
 
-    def blueprint(
-        self, on_new_message: Callable[[UserMessage], Awaitable[Any]]
-    ) -> Blueprint:
+    def blueprint(self, on_new_message):
         twilio_webhook = Blueprint("twilio_webhook", __name__)
 
         @twilio_webhook.route("/", methods=["GET"])
-        async def health(_: Request) -> HTTPResponse:
+        async def health(request: Request):
             return response.json({"status": "ok"})
 
         @twilio_webhook.route("/webhook", methods=["POST"])
-        async def message(request: Request) -> HTTPResponse:
+        async def message(request: Request):
             sender = request.form.get("From", None)
             text = request.form.get("Body", None)
 
-            out_channel = self.get_output_channel()
+            out_channel = TwilioOutput(
+                self.account_sid, self.auth_token, self.twilio_number
+            )
 
             if sender is not None and message is not None:
-                metadata = self.get_metadata(request)
                 try:
                     # @ signs get corrupted in SMSes by some carriers
                     text = text.replace("¡", "@")
                     await on_new_message(
                         UserMessage(
-                            text,
-                            out_channel,
-                            sender,
-                            input_channel=self.name(),
-                            metadata=metadata,
+                            text, out_channel, sender, input_channel=self.name()
                         )
                     )
                 except Exception as e:
-                    logger.error(f"Exception when trying to handle message.{e}")
+                    logger.error(
+                        "Exception when trying to handle message.{0}".format(e)
+                    )
                     logger.debug(e, exc_info=True)
                     if self.debug_mode:
                         raise
@@ -141,9 +125,6 @@ class TwilioInput(InputChannel):
             else:
                 logger.debug("Invalid message")
 
-            return response.text("", status=204)
+            return response.text("success")
 
         return twilio_webhook
-
-    def get_output_channel(self) -> OutputChannel:
-        return TwilioOutput(self.account_sid, self.auth_token, self.twilio_number)

@@ -14,7 +14,6 @@ from rasa.cli.arguments.train import (
     add_debug_plots_param,
     add_dump_stories_param,
     add_augmentation_param,
-    add_persist_nlu_data_param,
 )
 
 
@@ -39,7 +38,6 @@ def set_interactive_arguments(parser: argparse.ArgumentParser):
     add_debug_plots_param(train_arguments)
     add_dump_stories_param(train_arguments)
     add_force_param(train_arguments)
-    add_persist_nlu_data_param(train_arguments)
 
 
 def set_interactive_core_arguments(parser: argparse.ArgumentParser):

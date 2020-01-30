@@ -1,6 +1,5 @@
 import logging
-import typing
-from typing import Any, Optional, Text, Tuple, Union, Dict
+from typing import Any, Optional, Text, Tuple, Union
 
 from rasa.nlu import config
 from rasa.nlu.components import ComponentBuilder
@@ -9,10 +8,6 @@ from rasa.nlu.model import Interpreter, Trainer
 from rasa.nlu.training_data import load_data
 from rasa.nlu.training_data.loading import load_data_from_endpoint
 from rasa.utils.endpoints import EndpointConfig
-
-
-if typing.TYPE_CHECKING:
-    from rasa.importers.importer import TrainingDataImporter
 
 logger = logging.getLogger(__name__)
 
@@ -25,18 +20,12 @@ class TrainingException(Exception):
           message -- explanation of why the request is invalid
       """
 
-    def __init__(
-        self,
-        failed_target_project: Optional[Text] = None,
-        exception: Optional[Exception] = None,
-    ) -> None:
+    def __init__(self, failed_target_project=None, exception=None):
         self.failed_target_project = failed_target_project
         if exception:
             self.message = exception.args[0]
-        else:
-            self.message = ""
 
-    def __str__(self) -> Text:
+    def __str__(self):
         return self.message
 
 
@@ -51,21 +40,39 @@ def create_persistor(persistor: Optional[Text]):
         return None
 
 
-async def train(
-    nlu_config: Union[Text, Dict, RasaNLUModelConfig],
-    data: Union[Text, "TrainingDataImporter"],
+def do_train_in_worker(
+    cfg: RasaNLUModelConfig,
+    data: Text,
+    path: Text,
+    fixed_model_name: Optional[Text] = None,
+    storage: Optional[Text] = None,
+    component_builder: Optional[ComponentBuilder] = None,
+) -> Text:
+    """Loads the trainer and the data and runs the training in a worker."""
+
+    try:
+        _, _, persisted_path = train(
+            cfg, data, path, fixed_model_name, storage, component_builder
+        )
+        return persisted_path or ""
+    except BaseException as e:
+        logger.exception("Failed to train on data '{}'.".format(data))
+        raise TrainingException(path, e)
+
+
+def train(
+    nlu_config: Union[Text, RasaNLUModelConfig],
+    data: Text,
     path: Optional[Text] = None,
     fixed_model_name: Optional[Text] = None,
     storage: Optional[Text] = None,
     component_builder: Optional[ComponentBuilder] = None,
     training_data_endpoint: Optional[EndpointConfig] = None,
-    persist_nlu_training_data: bool = False,
-    **kwargs: Any,
+    **kwargs: Any
 ) -> Tuple[Trainer, Interpreter, Optional[Text]]:
     """Loads the trainer and the data and runs the training of the model."""
-    from rasa.importers.importer import TrainingDataImporter
 
-    if not isinstance(nlu_config, RasaNLUModelConfig):
+    if isinstance(nlu_config, str):
         nlu_config = config.load(nlu_config)
 
     # Ensure we are training a model that we can save in the end
@@ -74,21 +81,15 @@ async def train(
     trainer = Trainer(nlu_config, component_builder)
     persistor = create_persistor(storage)
     if training_data_endpoint is not None:
-        training_data = await load_data_from_endpoint(
+        training_data = load_data_from_endpoint(
             training_data_endpoint, nlu_config.language
         )
-    elif isinstance(data, TrainingDataImporter):
-        training_data = await data.get_nlu_data(nlu_config.data)
     else:
         training_data = load_data(data, nlu_config.language)
-
-    training_data.print_stats()
     interpreter = trainer.train(training_data, **kwargs)
 
     if path:
-        persisted_path = trainer.persist(
-            path, persistor, fixed_model_name, persist_nlu_training_data
-        )
+        persisted_path = trainer.persist(path, persistor, fixed_model_name)
     else:
         persisted_path = None
 

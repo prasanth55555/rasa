@@ -1,18 +1,13 @@
 import logging
 import re
 import typing
-from collections import OrderedDict
-from typing import Any, Text, Optional, Tuple, List, Dict
-
-from rasa.core.constants import INTENT_MESSAGE_PREFIX
+from typing import Any, Text
 
 from rasa.nlu.training_data.formats.readerwriter import (
     TrainingDataReader,
     TrainingDataWriter,
 )
 from rasa.nlu.utils import build_entity
-from rasa.nlu.constants import INTENT_ATTRIBUTE
-
 
 if typing.TYPE_CHECKING:
     from rasa.nlu.training_data import Message, TrainingData
@@ -37,8 +32,10 @@ ESCAPE_DCT = {"\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t"}
 ESCAPE = re.compile(r"[\b\f\n\r\t]")
 
 
-def encode_string(s: Text) -> Text:
-    """Return a encoded python string."""
+def encode_string(s):
+    """Return a encoded python string
+
+    """
 
     def replace(match):
         return ESCAPE_DCT[match.group(0)]
@@ -58,6 +55,7 @@ class MarkdownReader(TrainingDataReader):
         self.training_examples = []
         self.entity_synonyms = {}
         self.regex_features = []
+        self.section_regexes = self._create_section_regexes(available_sections)
         self.lookup_tables = []
 
     def reads(self, s: Text, **kwargs: Any) -> "TrainingData":
@@ -86,16 +84,23 @@ class MarkdownReader(TrainingDataReader):
         """ Removes comments defined by `comment_regex` from `text`. """
         return re.sub(comment_regex, "", text)
 
-    def _find_section_header(self, line: Text) -> Optional[Tuple[Text, Text]]:
+    @staticmethod
+    def _create_section_regexes(section_names):
+        def make_regex(section_name):
+            return re.compile(r"##\s*{}:(.+)".format(section_name))
+
+        return {sn: make_regex(sn) for sn in section_names}
+
+    def _find_section_header(self, line):
         """Checks if the current line contains a section header
         and returns the section and the title."""
-        match = re.search(r"##\s*(.+?):(.+)", line)
-        if match is not None:
-            return match.group(1), match.group(2)
-
+        for name, regex in self.section_regexes.items():
+            match = re.search(regex, line)
+            if match is not None:
+                return name, match.group(1)
         return None
 
-    def _load_files(self, line: Text) -> None:
+    def _load_files(self, line):
         """Checks line to see if filename was supplied.  If so, inserts the
         filename into the lookup table slot for processing from the regex
         featurizer."""
@@ -107,13 +112,13 @@ class MarkdownReader(TrainingDataReader):
                     {"name": self.current_title, "elements": str(fname)}
                 )
 
-    def _parse_item(self, line: Text) -> None:
+    def _parse_item(self, line):
         """Parses an md list item line based on the current section type."""
         match = re.match(item_regex, line)
         if match:
             item = match.group(1)
             if self.current_section == INTENT:
-                parsed = self.parse_training_example(item)
+                parsed = self._parse_training_example(item)
                 self.training_examples.append(parsed)
             elif self.current_section == SYNONYM:
                 self._add_synonym(item, self.current_title)
@@ -124,7 +129,7 @@ class MarkdownReader(TrainingDataReader):
             elif self.current_section == LOOKUP:
                 self._add_item_to_lookup(item)
 
-    def _add_item_to_lookup(self, item: Text) -> None:
+    def _add_item_to_lookup(self, item):
         """Takes a list of lookup table dictionaries.  Finds the one associated
         with the current lookup, then adds the item to the list."""
         matches = [l for l in self.lookup_tables if l["name"] == self.current_title]
@@ -135,7 +140,7 @@ class MarkdownReader(TrainingDataReader):
             elements.append(item)
 
     @staticmethod
-    def _find_entities_in_training_example(example: Text) -> List[Dict]:
+    def _find_entities_in_training_example(example):
         """Extracts entities from a markdown intent example."""
         entities = []
         offset = 0
@@ -156,40 +161,38 @@ class MarkdownReader(TrainingDataReader):
 
         return entities
 
-    def _add_synonym(self, text: Text, value: Text) -> None:
+    def _add_synonym(self, text, value):
         from rasa.nlu.training_data.util import check_duplicate_synonym
 
         check_duplicate_synonym(self.entity_synonyms, text, value, "reading markdown")
         self.entity_synonyms[text] = value
 
-    def _add_synonyms(self, plain_text: Text, entities: List[Dict]) -> None:
+    def _add_synonyms(self, plain_text, entities):
         """Adds synonyms found in intent examples"""
         for e in entities:
             e_text = plain_text[e["start"] : e["end"]]
             if e_text != e["value"]:
                 self._add_synonym(e_text, e["value"])
 
-    def parse_training_example(self, example: Text) -> "Message":
+    def _parse_training_example(self, example):
         """Extract entities and synonyms, and convert to plain text."""
         from rasa.nlu.training_data import Message
 
         entities = self._find_entities_in_training_example(example)
         plain_text = re.sub(ent_regex, lambda m: m.groupdict()["entity_text"], example)
         self._add_synonyms(plain_text, entities)
-
-        message = Message.build(plain_text, self.current_title)
-
+        message = Message(plain_text, {"intent": self.current_title})
         if len(entities) > 0:
             message.set("entities", entities)
         return message
 
-    def _set_current_section(self, section: Text, title: Text) -> None:
+    def _set_current_section(self, section, title):
         """Update parsing mode."""
         if section not in available_sections:
             raise ValueError(
-                "Found markdown section '{}' which is not "
-                "in the allowed sections '{}'."
-                "".format(section, "', '".join(available_sections))
+                "Found markdown section {} which is not "
+                "in the allowed sections {},"
+                "".format(section, ",".join(available_sections))
             )
 
         self.current_section = section
@@ -197,9 +200,8 @@ class MarkdownReader(TrainingDataReader):
 
 
 class MarkdownWriter(TrainingDataWriter):
-    def dumps(self, training_data: "TrainingData") -> Text:
+    def dumps(self, training_data):
         """Transforms a TrainingData object into a markdown string."""
-
         md = ""
         md += self._generate_training_examples_md(training_data)
         md += self._generate_synonyms_md(training_data)
@@ -208,41 +210,26 @@ class MarkdownWriter(TrainingDataWriter):
 
         return md
 
-    def _generate_training_examples_md(self, training_data: "TrainingData") -> Text:
-        """Generates markdown training examples."""
+    def _generate_training_examples_md(self, training_data):
+        """generates markdown training examples."""
+        training_examples = sorted(
+            [e.as_dict() for e in training_data.training_examples],
+            key=lambda k: k["intent"],
+        )
+        md = ""
+        for i, example in enumerate(training_examples):
+            intent = training_examples[i - 1]["intent"]
+            if i == 0 or intent != example["intent"]:
+                md += self._generate_section_header_md(
+                    INTENT, example["intent"], i != 0
+                )
 
-        import rasa.nlu.training_data.util as rasa_nlu_training_data_utils
+            md += self._generate_item_md(self._generate_message_md(example))
 
-        training_examples = OrderedDict()
+        return md
 
-        # Sort by intent while keeping basic intent order
-        for example in [e.as_dict_nlu() for e in training_data.training_examples]:
-            rasa_nlu_training_data_utils.remove_untrainable_entities_from(example)
-            intent = example[INTENT_ATTRIBUTE]
-            training_examples.setdefault(intent, [])
-            training_examples[intent].append(example)
-
-        # Don't prepend newline for first line
-        prepend_newline = False
-        lines = []
-
-        for intent, examples in training_examples.items():
-            section_header = self._generate_section_header_md(
-                INTENT, intent, prepend_newline=prepend_newline
-            )
-            lines.append(section_header)
-            prepend_newline = True
-
-            lines += [
-                self._generate_item_md(self.generate_message_md(example))
-                for example in examples
-            ]
-
-        return "".join(lines)
-
-    def _generate_synonyms_md(self, training_data: "TrainingData") -> Text:
-        """Generates markdown for entity synomyms."""
-
+    def _generate_synonyms_md(self, training_data):
+        """generates markdown for entity synomyms."""
         entity_synonyms = sorted(
             training_data.entity_synonyms.items(), key=lambda x: x[1]
         )
@@ -255,9 +242,8 @@ class MarkdownWriter(TrainingDataWriter):
 
         return md
 
-    def _generate_regex_features_md(self, training_data: "TrainingData") -> Text:
-        """Generates markdown for regex features."""
-
+    def _generate_regex_features_md(self, training_data):
+        """generates markdown for regex features."""
         md = ""
         # regex features are already sorted
         regex_features = training_data.regex_features
@@ -269,9 +255,8 @@ class MarkdownWriter(TrainingDataWriter):
 
         return md
 
-    def _generate_lookup_tables_md(self, training_data: "TrainingData") -> Text:
-        """Generates markdown for regex features."""
-
+    def _generate_lookup_tables_md(self, training_data):
+        """generates markdown for regex features."""
         md = ""
         # regex features are already sorted
         lookup_tables = training_data.lookup_tables
@@ -286,61 +271,44 @@ class MarkdownWriter(TrainingDataWriter):
         return md
 
     @staticmethod
-    def _generate_section_header_md(
-        section_type: Text, title: Text, prepend_newline: bool = True
-    ) -> Text:
-        """Generates markdown section header."""
-
+    def _generate_section_header_md(section_type, title, prepend_newline=True):
+        """generates markdown section header."""
         prefix = "\n" if prepend_newline else ""
-        title = encode_string(title)
-
-        return f"{prefix}## {section_type}:{title}\n"
+        return prefix + "## {}:{}\n".format(section_type, encode_string(title))
 
     @staticmethod
-    def _generate_item_md(text: Text) -> Text:
-        """Generates markdown for a list item."""
-
-        return f"- {encode_string(text)}\n"
-
-    @staticmethod
-    def _generate_fname_md(text: Text) -> Text:
-        """Generates markdown for a lookup table file path."""
-
-        return f"  {encode_string(text)}\n"
+    def _generate_item_md(text):
+        """generates markdown for a list item."""
+        return "- {}\n".format(encode_string(text))
 
     @staticmethod
-    def generate_message_md(message: Dict[Text, Any]) -> Text:
-        """Generates markdown for a message object."""
+    def _generate_fname_md(text):
+        """generates markdown for a lookup table file path."""
+        return "  {}\n".format(encode_string(text))
 
+    def _generate_message_md(self, message):
+        """generates markdown for a message object."""
         md = ""
         text = message.get("text", "")
+        entities = sorted(message.get("entities", []), key=lambda k: k["start"])
 
         pos = 0
-
-        # If a message was prefixed with `INTENT_MESSAGE_PREFIX` (this can only happen
-        # in end-to-end stories) then potential entities were provided in the json
-        # format (e.g. `/greet{"name": "Rasa"}) and we don't have to add the NLU
-        # entity annotation
-        if not text.startswith(INTENT_MESSAGE_PREFIX):
-            entities = sorted(message.get("entities", []), key=lambda k: k["start"])
-
-            for entity in entities:
-                md += text[pos : entity["start"]]
-                md += MarkdownWriter.generate_entity_md(text, entity)
-                pos = entity["end"]
+        for entity in entities:
+            md += text[pos : entity["start"]]
+            md += self._generate_entity_md(text, entity)
+            pos = entity["end"]
 
         md += text[pos:]
 
         return md
 
     @staticmethod
-    def generate_entity_md(text: Text, entity: Dict) -> Text:
-        """Generates markdown for an entity object."""
-
+    def _generate_entity_md(text, entity):
+        """generates markdown for an entity object."""
         entity_text = text[entity["start"] : entity["end"]]
         entity_type = entity["entity"]
         if entity_text != entity["value"]:
             # add synonym suffix
             entity_type += ":{}".format(entity["value"])
 
-        return f"[{entity_text}]({entity_type})"
+        return "[{}]({})".format(entity_text, entity_type)

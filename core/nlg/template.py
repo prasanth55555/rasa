@@ -1,12 +1,12 @@
 import copy
 import logging
+import re
 from collections import defaultdict
 
 from rasa.core.trackers import DialogueStateTracker
 from typing import Text, Any, Dict, Optional, List
 
 from rasa.core.nlg.generator import NaturalLanguageGenerator
-from rasa.core.nlg.interpolator import interpolate_text, interpolate
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,7 @@ class TemplatedNaturalLanguageGenerator(NaturalLanguageGenerator):
     def __init__(self, templates: Dict[Text, List[Dict[Text, Any]]]) -> None:
         self.templates = templates
 
-    def _templates_for_utter_action(
-        self, utter_action: Text, output_channel: Text
-    ) -> List[Dict[Text, Any]]:
+    def _templates_for_utter_action(self, utter_action, output_channel):
         """Return array of templates that fit the channel and action."""
 
         channel_templates = []
@@ -68,7 +66,7 @@ class TemplatedNaturalLanguageGenerator(NaturalLanguageGenerator):
         template_name: Text,
         tracker: DialogueStateTracker,
         output_channel: Text,
-        **kwargs: Any,
+        **kwargs: Any
     ) -> Optional[Dict[Text, Any]]:
         """Generate a response for the requested template."""
 
@@ -82,7 +80,7 @@ class TemplatedNaturalLanguageGenerator(NaturalLanguageGenerator):
         template_name: Text,
         filled_slots: Dict[Text, Any],
         output_channel: Text,
-        **kwargs: Any,
+        **kwargs: Any
     ) -> Optional[Dict[Text, Any]]:
         """Generate a response for the requested template."""
 
@@ -90,33 +88,41 @@ class TemplatedNaturalLanguageGenerator(NaturalLanguageGenerator):
         r = copy.deepcopy(self._random_template_for(template_name, output_channel))
         # Filling the slots in the template and returning the template
         if r is not None:
-            return self._fill_template(r, filled_slots, **kwargs)
+            return self._fill_template_text(r, filled_slots, **kwargs)
         else:
             return None
 
-    def _fill_template(
+    def _fill_template_text(
         self,
         template: Dict[Text, Any],
         filled_slots: Optional[Dict[Text, Any]] = None,
-        **kwargs: Any,
+        **kwargs: Any
     ) -> Dict[Text, Any]:
         """"Combine slot values and key word arguments to fill templates."""
 
         # Getting the slot values in the template variables
         template_vars = self._template_variables(filled_slots, kwargs)
 
-        keys_to_interpolate = [
-            "text",
-            "image",
-            "custom",
-            "button",
-            "attachment",
-            "quick_replies",
-        ]
-        if template_vars:
-            for key in keys_to_interpolate:
-                if key in template:
-                    template[key] = interpolate(template[key], template_vars)
+        # Filling the template variables in the template text
+        if template_vars and "text" in template:
+            try:
+                # transforming template tags from
+                # "{tag_name}" to "{0[tag_name]}"
+                # as described here:
+                # https://stackoverflow.com/questions/7934620/python-dots-in-the-name-of-variable-in-a-format-string#comment9695339_7934969
+                # assuming that slot_name do not contain newline character here
+                text = re.sub(r"{([^\n]+?)}", r"{0[\1]}", template["text"])
+                template["text"] = text.format(template_vars)
+            except KeyError as e:
+                logger.exception(
+                    "Failed to fill utterance template '{}'. "
+                    "Tried to replace '{}' but could not find "
+                    "a value for it. There is no slot with this "
+                    "name nor did you pass the value explicitly "
+                    "when calling the template. Return template "
+                    "without filling the template. "
+                    "".format(template, e.args[0])
+                )
         return template
 
     @staticmethod

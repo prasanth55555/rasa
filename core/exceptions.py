@@ -1,5 +1,3 @@
-from typing import Optional, Text
-
 from rasa.exceptions import RasaException
 
 
@@ -10,22 +8,22 @@ class RasaCoreException(RasaException):
 class StoryParseError(RasaCoreException, ValueError):
     """Raised if there is an error while parsing a story file."""
 
-    def __init__(self, message) -> None:
+    def __init__(self, message):
         self.message = message
 
 
 class UnsupportedDialogueModelError(RasaCoreException):
-    """Raised when a model is too old to be loaded.
+    """Raised when a model is to old to be loaded.
 
     Attributes:
         message -- explanation of why the model is invalid
     """
 
-    def __init__(self, message: Text, model_version: Optional[Text] = None) -> None:
+    def __init__(self, message, model_version=None):
         self.message = message
         self.model_version = model_version
 
-    def __str__(self) -> Text:
+    def __str__(self):
         return self.message
 
 
@@ -36,5 +34,5 @@ class AgentNotReady(RasaCoreException):
     if someone tries to parse a message with that agent, this exception
     will be thrown."""
 
-    def __init__(self, message: Text) -> None:
+    def __init__(self, message):
         self.message = message

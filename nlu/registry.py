@@ -8,7 +8,6 @@ import logging
 import typing
 from typing import Any, Dict, List, Optional, Text, Type
 
-from rasa.constants import DOCS_URL_COMPONENTS
 from rasa.nlu.classifiers.embedding_intent_classifier import EmbeddingIntentClassifier
 from rasa.nlu.classifiers.keyword_intent_classifier import KeywordIntentClassifier
 from rasa.nlu.classifiers.mitie_intent_classifier import MitieIntentClassifier
@@ -18,23 +17,19 @@ from rasa.nlu.extractors.duckling_http_extractor import DucklingHTTPExtractor
 from rasa.nlu.extractors.entity_synonyms import EntitySynonymMapper
 from rasa.nlu.extractors.mitie_entity_extractor import MitieEntityExtractor
 from rasa.nlu.extractors.spacy_entity_extractor import SpacyEntityExtractor
-from rasa.nlu.featurizers.dense_featurizer.convert_featurizer import ConveRTFeaturizer
-from rasa.nlu.featurizers.dense_featurizer.mitie_featurizer import MitieFeaturizer
-from rasa.nlu.featurizers.dense_featurizer.spacy_featurizer import SpacyFeaturizer
-from rasa.nlu.featurizers.sparse_featurizer.count_vectors_featurizer import (
-    CountVectorsFeaturizer,
-)
-from rasa.nlu.featurizers.sparse_featurizer.regex_featurizer import RegexFeaturizer
+from rasa.nlu.featurizers.count_vectors_featurizer import CountVectorsFeaturizer
+from rasa.nlu.featurizers.mitie_featurizer import MitieFeaturizer
+from rasa.nlu.featurizers.ngram_featurizer import NGramFeaturizer
+from rasa.nlu.featurizers.regex_featurizer import RegexFeaturizer
+from rasa.nlu.featurizers.spacy_featurizer import SpacyFeaturizer
 from rasa.nlu.model import Metadata
-from rasa.nlu.selectors.embedding_response_selector import ResponseSelector
-from rasa.nlu.tokenizers.convert_tokenizer import ConveRTTokenizer
 from rasa.nlu.tokenizers.jieba_tokenizer import JiebaTokenizer
 from rasa.nlu.tokenizers.mitie_tokenizer import MitieTokenizer
 from rasa.nlu.tokenizers.spacy_tokenizer import SpacyTokenizer
 from rasa.nlu.tokenizers.whitespace_tokenizer import WhitespaceTokenizer
 from rasa.nlu.utils.mitie_utils import MitieNLP
 from rasa.nlu.utils.spacy_utils import SpacyNLP
-from rasa.utils.common import class_from_module_path, raise_warning
+from rasa.utils.common import class_from_module_path
 
 if typing.TYPE_CHECKING:
     from rasa.nlu.components import Component
@@ -53,7 +48,6 @@ component_classes = [
     MitieTokenizer,
     SpacyTokenizer,
     WhitespaceTokenizer,
-    ConveRTTokenizer,
     JiebaTokenizer,
     # extractors
     SpacyEntityExtractor,
@@ -64,16 +58,14 @@ component_classes = [
     # featurizers
     SpacyFeaturizer,
     MitieFeaturizer,
+    NGramFeaturizer,
     RegexFeaturizer,
     CountVectorsFeaturizer,
-    ConveRTFeaturizer,
     # classifiers
     SklearnIntentClassifier,
     MitieIntentClassifier,
     KeywordIntentClassifier,
     EmbeddingIntentClassifier,
-    # selectors
-    ResponseSelector,
 ]
 
 # Mapping from a components name to its class to allow name based lookup.
@@ -108,42 +100,36 @@ old_style_names = {
 # the preexisting `backends`.
 registered_pipeline_templates = {
     "pretrained_embeddings_spacy": [
-        {"name": "SpacyNLP"},
-        {"name": "SpacyTokenizer"},
-        {"name": "SpacyFeaturizer"},
-        {"name": "RegexFeaturizer"},
-        {"name": "CRFEntityExtractor"},
-        {"name": "EntitySynonymMapper"},
-        {"name": "SklearnIntentClassifier"},
+        "SpacyNLP",
+        "SpacyTokenizer",
+        "SpacyFeaturizer",
+        "RegexFeaturizer",
+        "CRFEntityExtractor",
+        "EntitySynonymMapper",
+        "SklearnIntentClassifier",
     ],
-    "keyword": [{"name": "KeywordIntentClassifier"}],
+    "keyword": ["KeywordIntentClassifier"],
     "supervised_embeddings": [
-        {"name": "WhitespaceTokenizer"},
-        {"name": "RegexFeaturizer"},
-        {"name": "CRFEntityExtractor"},
-        {"name": "EntitySynonymMapper"},
-        {"name": "CountVectorsFeaturizer"},
-        {
-            "name": "CountVectorsFeaturizer",
-            "analyzer": "char_wb",
-            "min_ngram": 1,
-            "max_ngram": 4,
-        },
-        {"name": "EmbeddingIntentClassifier"},
-    ],
-    "pretrained_embeddings_convert": [
-        {"name": "ConveRTTokenizer"},
-        {"name": "ConveRTFeaturizer"},
-        {"name": "EmbeddingIntentClassifier"},
+        "WhitespaceTokenizer",
+        "RegexFeaturizer",
+        "CRFEntityExtractor",
+        "EntitySynonymMapper",
+        "CountVectorsFeaturizer",
+        "EmbeddingIntentClassifier",
     ],
 }
 
 
-def pipeline_template(s: Text) -> Optional[List[Dict[Text, Any]]]:
-    import copy
+def pipeline_template(s: Text) -> Optional[List[Dict[Text, Text]]]:
+    components = registered_pipeline_templates.get(s)
 
-    # do a deepcopy to avoid changing the template configurations
-    return copy.deepcopy(registered_pipeline_templates.get(s))
+    if components:
+        # converts the list of components in the configuration
+        # format expected (one json object per component)
+        return [{"name": c} for c in components]
+
+    else:
+        return None
 
 
 def get_component_class(component_name: Text) -> Type["Component"]:
@@ -153,41 +139,23 @@ def get_component_class(component_name: Text) -> Type["Component"]:
         if component_name not in old_style_names:
             try:
                 return class_from_module_path(component_name)
-
-            except AttributeError:
-                # when component_name is a path to a class but the path does not contain
-                # that class
-                module_name, _, class_name = component_name.rpartition(".")
+            except Exception:
                 raise Exception(
-                    f"Failed to find class '{class_name}' in module '{module_name}'.\n"
+                    "Failed to find component class for '{}'. Unknown "
+                    "component name. Check your configured pipeline and make "
+                    "sure the mentioned component is not misspelled. If you "
+                    "are creating your own component, make sure it is either "
+                    "listed as part of the `component_classes` in "
+                    "`rasa.nlu.registry.py` or is a proper name of a class "
+                    "in a module.".format(component_name)
                 )
-            except ImportError as e:
-                # when component_name is a path to a class but that path is invalid or
-                # when component_name is a class name and not part of old_style_names
-
-                is_path = "." in component_name
-
-                if is_path:
-                    module_name, _, _ = component_name.rpartition(".")
-                    exception_message = f"Failed to find module '{module_name}'. \n{e}"
-                else:
-                    exception_message = (
-                        f"Cannot find class '{component_name}' from global namespace. "
-                        f"Please check that there is no typo in the class "
-                        f"name and that you have imported the class into the global "
-                        f"namespace."
-                    )
-
-                raise ModuleNotFoundError(exception_message)
         else:
             # DEPRECATED ensures compatibility, remove in future versions
-            raise_warning(
-                f"Your nlu config file "
-                f"contains old style component name `{component_name}`, "
-                f"you should change it to its new class name: "
-                f"`{old_style_names[component_name]}`.",
-                FutureWarning,
-                docs=DOCS_URL_COMPONENTS,
+            logger.warning(
+                "DEPRECATION warning: your nlu config file "
+                "contains old style component name `{}`, "
+                "you should change it to its class name: `{}`."
+                "".format(component_name, old_style_names[component_name])
             )
             component_name = old_style_names[component_name]
 
@@ -199,7 +167,7 @@ def load_component_by_meta(
     model_dir: Text,
     metadata: Metadata,
     cached_component: Optional["Component"],
-    **kwargs: Any,
+    **kwargs: Any
 ) -> Optional["Component"]:
     """Resolves a component and calls its load method.
 

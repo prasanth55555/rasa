@@ -1,13 +1,12 @@
+# -*- coding: utf-8 -*-
 from collections import defaultdict, namedtuple, deque
 
 import copy
-import warnings
 import logging
 import random
 from tqdm import tqdm
 from typing import Optional, List, Text, Set, Dict, Tuple
 
-from rasa.constants import DOCS_URL_STORIES
 from rasa.core import utils
 from rasa.core.domain import Domain
 from rasa.core.events import (
@@ -25,7 +24,7 @@ from rasa.core.training.structures import (
     StoryStep,
     GENERATED_CHECKPOINT_PREFIX,
 )
-from rasa.utils.common import is_logging_disabled, raise_warning
+from rasa.utils.common import is_logging_disabled
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,9 @@ class TrackerWithCachedStates(DialogueStateTracker):
     def __init__(
         self, sender_id, slots, max_event_history=None, domain=None, is_augmented=False
     ):
-        super().__init__(sender_id, slots, max_event_history)
+        super(TrackerWithCachedStates, self).__init__(
+            sender_id, slots, max_event_history
+        )
         self._states = None
         self.domain = domain
         # T/F property to filter augmented stories
@@ -64,7 +65,7 @@ class TrackerWithCachedStates(DialogueStateTracker):
         # if don't have it cached, we use the domain to calculate the states
         # from the events
         if self._states is None:
-            self._states = super().past_states(domain)
+            self._states = super(TrackerWithCachedStates, self).past_states(domain)
 
         return self._states
 
@@ -119,7 +120,7 @@ class TrackerWithCachedStates(DialogueStateTracker):
             # cached. let's make sure it is there.
             self._states = self.past_states(self.domain)
 
-        super().update(event)
+        super(TrackerWithCachedStates, self).update(event)
 
         if not skip_states:
             if isinstance(event, ActionExecuted):
@@ -143,14 +144,14 @@ TrackerLookupDict = Dict[Optional[Text], List[TrackerWithCachedStates]]
 TrackersTuple = Tuple[List[TrackerWithCachedStates], List[TrackerWithCachedStates]]
 
 
-class TrainingDataGenerator:
+class TrainingDataGenerator(object):
     def __init__(
         self,
         story_graph: StoryGraph,
         domain: Domain,
         remove_duplicates: bool = True,
         unique_last_num_states: Optional[int] = None,
-        augmentation_factor: int = 50,
+        augmentation_factor: int = 20,
         tracker_limit: Optional[int] = None,
         use_story_concatenation: bool = True,
         debug_plots: bool = False,
@@ -186,9 +187,9 @@ class TrainingDataGenerator:
     @staticmethod
     def _phase_name(everything_reachable_is_reached, phase):
         if everything_reachable_is_reached:
-            return f"augmentation round {phase}"
+            return "augmentation round {}".format(phase)
         else:
-            return f"data generation round {phase}"
+            return "data generation round {}".format(phase)
 
     def generate(self) -> List[TrackerWithCachedStates]:
         if self.config.remove_duplicates and self.config.unique_last_num_states:
@@ -217,7 +218,7 @@ class TrainingDataGenerator:
 
         phase = 0  # one phase is one traversal of all story steps.
         min_num_aug_phases = 3 if self.config.augmentation_factor > 0 else 0
-        logger.debug(f"Number of augmentation rounds is {min_num_aug_phases}")
+        logger.debug("Number of augmentation rounds is {}".format(min_num_aug_phases))
 
         # placeholder to track gluing process of checkpoints
         used_checkpoints = set()
@@ -239,7 +240,7 @@ class TrainingDataGenerator:
                     "".format(phase_name, num_active_trackers)
                 )
             else:
-                logger.debug(f"There are no trackers for {phase_name}")
+                logger.debug("There are no trackers for {}".format(phase_name))
                 break
 
             # track unused checkpoints for this phase
@@ -313,7 +314,9 @@ class TrainingDataGenerator:
                     story_end_trackers.extend(unique_ends)
 
             num_finished = len(finished_trackers) + len(story_end_trackers)
-            logger.debug(f"Finished phase ({num_finished} training samples found).")
+            logger.debug(
+                "Finished phase ({} training samples found).".format(num_finished)
+            )
 
             # prepare next round
             phase += 1
@@ -436,11 +439,11 @@ class TrainingDataGenerator:
         """
 
         return unused_checkpoints.union(
-            {
+            set(
                 start_name
                 for start_name in start_checkpoints
                 if start_name not in used_checkpoints
-            }
+            )
         )
 
     @staticmethod
@@ -654,13 +657,12 @@ class TrainingDataGenerator:
         that no one provided."""
 
         if STORY_START in unused_checkpoints:
-            raise_warning(
+            logger.warning(
                 "There is no starting story block "
                 "in the training data. "
                 "All your story blocks start with some checkpoint. "
                 "There should be at least one story block "
-                "that starts without any checkpoint.",
-                docs=DOCS_URL_STORIES + "#stories",
+                "that starts without any checkpoint."
             )
 
         # running through the steps first will result in only one warning
@@ -682,22 +684,20 @@ class TrainingDataGenerator:
 
         for cp, block_name in collected_start:
             if not cp.startswith(GENERATED_CHECKPOINT_PREFIX):
-                raise_warning(
-                    f"Unsatisfied start checkpoint '{cp}' "
-                    f"in block '{block_name}'. "
-                    f"Remove this checkpoint or add "
-                    f"story blocks that end "
-                    f"with this checkpoint.",
-                    docs=DOCS_URL_STORIES + "#checkpoints",
+                logger.warning(
+                    "Unsatisfied start checkpoint '{}' "
+                    "in block '{}'. "
+                    "Remove this checkpoint or add "
+                    "story blocks that end "
+                    "with this checkpoint.".format(cp, block_name)
                 )
 
         for cp, block_name in collected_end:
             if not cp.startswith(GENERATED_CHECKPOINT_PREFIX):
-                raise_warning(
-                    f"Unsatisfied end checkpoint '{cp}' "
-                    f"in block '{block_name}'. "
-                    f"Remove this checkpoint or add "
-                    f"story blocks that start "
-                    f"with this checkpoint.",
-                    docs=DOCS_URL_STORIES + "#checkpoints",
+                logger.warning(
+                    "Unsatisfied end checkpoint '{}' "
+                    "in block '{}'. "
+                    "Remove this checkpoint or add "
+                    "story blocks that start "
+                    "with this checkpoint.".format(cp, block_name)
                 )

@@ -2,28 +2,26 @@ import os
 import warnings
 from typing import Any, Dict, Optional, Text
 
-from rasa.constants import DOCS_URL_TRAINING_DATA_NLU
-from rasa.nlu.constants import ENTITIES_ATTRIBUTE
+from rasa.nlu import utils
 from rasa.nlu.config import RasaNLUModelConfig
 from rasa.nlu.extractors import EntityExtractor
 from rasa.nlu.model import Metadata
 from rasa.nlu.training_data import Message, TrainingData
 from rasa.nlu.utils import write_json_to_file
 import rasa.utils.io
-from rasa.utils.common import raise_warning
 
 
 class EntitySynonymMapper(EntityExtractor):
 
-    provides = [ENTITIES_ATTRIBUTE]
+    provides = ["entities"]
 
     def __init__(
         self,
-        component_config: Optional[Dict[Text, Any]] = None,
+        component_config: Optional[Dict[Text, Text]] = None,
         synonyms: Optional[Dict[Text, Any]] = None,
     ) -> None:
 
-        super().__init__(component_config)
+        super(EntitySynonymMapper, self).__init__(component_config)
 
         self.synonyms = synonyms if synonyms else {}
 
@@ -35,15 +33,15 @@ class EntitySynonymMapper(EntityExtractor):
             self.add_entities_if_synonyms(key, value)
 
         for example in training_data.entity_examples:
-            for entity in example.get(ENTITIES_ATTRIBUTE, []):
+            for entity in example.get("entities", []):
                 entity_val = example.text[entity["start"] : entity["end"]]
                 self.add_entities_if_synonyms(entity_val, str(entity.get("value")))
 
     def process(self, message: Message, **kwargs: Any) -> None:
 
-        updated_entities = message.get(ENTITIES_ATTRIBUTE, [])[:]
+        updated_entities = message.get("entities", [])[:]
         self.replace_synonyms(updated_entities)
-        message.set(ENTITIES_ATTRIBUTE, updated_entities, add_to_output=True)
+        message.set("entities", updated_entities, add_to_output=True)
 
     def persist(self, file_name: Text, model_dir: Text) -> Optional[Dict[Text, Any]]:
 
@@ -64,7 +62,7 @@ class EntitySynonymMapper(EntityExtractor):
         model_dir: Optional[Text] = None,
         model_metadata: Optional[Metadata] = None,
         cached_component: Optional["EntitySynonymMapper"] = None,
-        **kwargs: Any,
+        **kwargs: Any
     ) -> "EntitySynonymMapper":
 
         file_name = meta.get("file")
@@ -77,21 +75,21 @@ class EntitySynonymMapper(EntityExtractor):
             synonyms = rasa.utils.io.read_json_file(entity_synonyms_file)
         else:
             synonyms = None
-            raise_warning(
-                f"Failed to load synonyms file from '{entity_synonyms_file}'.",
-                docs=DOCS_URL_TRAINING_DATA_NLU + "#entity-synonyms",
+            warnings.warn(
+                "Failed to load synonyms file from '{}'".format(entity_synonyms_file)
             )
         return cls(meta, synonyms)
 
-    def replace_synonyms(self, entities) -> None:
+    def replace_synonyms(self, entities):
         for entity in entities:
             # need to wrap in `str` to handle e.g. entity values of type int
             entity_value = str(entity["value"])
             if entity_value.lower() in self.synonyms:
+                entity["synonym"] = entity_value.lower()
                 entity["value"] = self.synonyms[entity_value.lower()]
                 self.add_processor_name(entity)
 
-    def add_entities_if_synonyms(self, entity_a, entity_b) -> None:
+    def add_entities_if_synonyms(self, entity_a, entity_b):
         if entity_b is not None:
             original = str(entity_a)
             replacement = str(entity_b)
@@ -99,15 +97,17 @@ class EntitySynonymMapper(EntityExtractor):
             if original != replacement:
                 original = original.lower()
                 if original in self.synonyms and self.synonyms[original] != replacement:
-                    raise_warning(
-                        f"Found conflicting synonym definitions "
-                        f"for {repr(original)}. Overwriting target "
-                        f"{repr(self.synonyms[original])} with "
-                        f"{repr(replacement)}. "
-                        f"Check your training data and remove "
-                        f"conflicting synonym definitions to "
-                        f"prevent this from happening.",
-                        docs=DOCS_URL_TRAINING_DATA_NLU + "#entity-synonyms",
+                    warnings.warn(
+                        "Found conflicting synonym definitions "
+                        "for {}. Overwriting target {} with {}. "
+                        "Check your training data and remove "
+                        "conflicting synonym definitions to "
+                        "prevent this from happening."
+                        "".format(
+                            repr(original),
+                            repr(self.synonyms[original]),
+                            repr(replacement),
+                        )
                     )
 
                 self.synonyms[original] = replacement

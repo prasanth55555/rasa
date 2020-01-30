@@ -1,28 +1,12 @@
 import logging
-import warnings
 import os
 import typing
-import numpy as np
-from typing import Any, Dict, List, Optional, Text, Tuple, Union, NamedTuple
+from typing import Any, Dict, List, Optional, Text, Tuple
 
 from rasa.nlu.config import InvalidConfigError, RasaNLUModelConfig
 from rasa.nlu.extractors import EntityExtractor
 from rasa.nlu.model import Metadata
-from rasa.nlu.tokenizers.tokenizer import Token
 from rasa.nlu.training_data import Message, TrainingData
-from rasa.nlu.constants import (
-    TOKENS_NAMES,
-    TEXT_ATTRIBUTE,
-    DENSE_FEATURE_NAMES,
-    SPACY_DOCS,
-    ENTITIES_ATTRIBUTE,
-)
-from rasa.constants import (
-    DOCS_BASE_URL,
-    DOCS_URL_TRAINING_DATA_NLU,
-    DOCS_URL_COMPONENTS,
-)
-from rasa.utils.common import raise_warning
 
 try:
     import spacy
@@ -33,22 +17,13 @@ logger = logging.getLogger(__name__)
 
 if typing.TYPE_CHECKING:
     from sklearn_crfsuite import CRF
-    from spacy.tokens import Doc
-
-
-class CRFToken(NamedTuple):
-    text: Text
-    tag: Text
-    entity: Text
-    pattern: Dict[Text, Any]
-    dense_features: np.ndarray
 
 
 class CRFEntityExtractor(EntityExtractor):
 
-    provides = [ENTITIES_ATTRIBUTE]
+    provides = ["entities"]
 
-    requires = [TOKENS_NAMES[TEXT_ATTRIBUTE]]
+    requires = ["tokens"]
 
     defaults = {
         # BILOU_flag determines whether to use BILOU tagging or not.
@@ -87,21 +62,20 @@ class CRFEntityExtractor(EntityExtractor):
     }
 
     function_dict = {
-        "low": lambda crf_token: crf_token.text.lower(),  # pytype: disable=attribute-error
-        "title": lambda crf_token: crf_token.text.istitle(),  # pytype: disable=attribute-error
-        "prefix5": lambda crf_token: crf_token.text[:5],
-        "prefix2": lambda crf_token: crf_token.text[:2],
-        "suffix5": lambda crf_token: crf_token.text[-5:],
-        "suffix3": lambda crf_token: crf_token.text[-3:],
-        "suffix2": lambda crf_token: crf_token.text[-2:],
-        "suffix1": lambda crf_token: crf_token.text[-1:],
-        "pos": lambda crf_token: crf_token.tag,
-        "pos2": lambda crf_token: crf_token.tag[:2],
-        "bias": lambda crf_token: "bias",
-        "upper": lambda crf_token: crf_token.text.isupper(),  # pytype: disable=attribute-error
-        "digit": lambda crf_token: crf_token.text.isdigit(),  # pytype: disable=attribute-error
-        "pattern": lambda crf_token: crf_token.pattern,
-        "text_dense_features": lambda crf_token: crf_token.dense_features,
+        "low": lambda doc: doc[0].lower(),  # pytype: disable=attribute-error
+        "title": lambda doc: doc[0].istitle(),  # pytype: disable=attribute-error
+        "prefix5": lambda doc: doc[0][:5],
+        "prefix2": lambda doc: doc[0][:2],
+        "suffix5": lambda doc: doc[0][-5:],
+        "suffix3": lambda doc: doc[0][-3:],
+        "suffix2": lambda doc: doc[0][-2:],
+        "suffix1": lambda doc: doc[0][-1:],
+        "pos": lambda doc: doc[1],
+        "pos2": lambda doc: doc[1][:2],
+        "bias": lambda doc: "bias",
+        "upper": lambda doc: doc[0].isupper(),  # pytype: disable=attribute-error
+        "digit": lambda doc: doc[0].isdigit(),  # pytype: disable=attribute-error
+        "pattern": lambda doc: doc[3],
     }
 
     def __init__(
@@ -110,7 +84,7 @@ class CRFEntityExtractor(EntityExtractor):
         ent_tagger: Optional["CRF"] = None,
     ) -> None:
 
-        super().__init__(component_config)
+        super(CRFEntityExtractor, self).__init__(component_config)
 
         self.ent_tagger = ent_tagger
 
@@ -118,7 +92,7 @@ class CRFEntityExtractor(EntityExtractor):
 
         self._check_pos_features_and_spacy()
 
-    def _check_pos_features_and_spacy(self) -> None:
+    def _check_pos_features_and_spacy(self):
         import itertools
 
         features = self.component_config.get("features", [])
@@ -128,7 +102,7 @@ class CRFEntityExtractor(EntityExtractor):
             self._check_spacy()
 
     @staticmethod
-    def _check_spacy() -> None:
+    def _check_spacy():
         if spacy is None:
             raise ImportError(
                 "Failed to import `spaCy`. "
@@ -137,14 +111,14 @@ class CRFEntityExtractor(EntityExtractor):
                 "instructions."
             )
 
-    def _validate_configuration(self) -> None:
+    def _validate_configuration(self):
         if len(self.component_config.get("features", [])) % 2 != 1:
             raise ValueError(
                 "Need an odd number of crf feature lists to have a center word."
             )
 
     @classmethod
-    def required_packages(cls) -> List[Text]:
+    def required_packages(cls):
         return ["sklearn_crfsuite", "sklearn"]
 
     def train(
@@ -168,24 +142,24 @@ class CRFEntityExtractor(EntityExtractor):
 
             self._train_model(dataset)
 
-    def _create_dataset(self, examples: List[Message]) -> List[List[CRFToken]]:
+    def _create_dataset(
+        self, examples: List[Message]
+    ) -> List[List[Tuple[Optional[Text], Optional[Text], Text, Dict[Text, Any]]]]:
         dataset = []
-
         for example in examples:
             entity_offsets = self._convert_example(example)
             dataset.append(self._from_json_to_crf(example, entity_offsets))
-
         return dataset
 
-    def _check_spacy_doc(self, message: Message) -> None:
-        if self.pos_features and message.get(SPACY_DOCS[TEXT_ATTRIBUTE]) is None:
+    def _check_spacy_doc(self, message):
+        if self.pos_features and message.get("spacy_doc") is None:
             raise InvalidConfigError(
                 "Could not find `spacy_doc` attribute for "
                 "message {}\n"
                 "POS features require a pipeline component "
                 "that provides `spacy_doc` attributes, i.e. `SpacyNLP`. "
-                "See {}/nlu/choosing-a-pipeline/#pretrained-embeddings-spacy "
-                "for details".format(message.text, DOCS_BASE_URL)
+                "See https://nlu.rasa.com/pipeline.html#nlp-spacy "
+                "for details".format(message.text)
             )
 
     def process(self, message: Message, **kwargs: Any) -> None:
@@ -194,9 +168,7 @@ class CRFEntityExtractor(EntityExtractor):
 
         extracted = self.add_extractor_name(self.extract_entities(message))
         message.set(
-            ENTITIES_ATTRIBUTE,
-            message.get(ENTITIES_ATTRIBUTE, []) + extracted,
-            add_to_output=True,
+            "entities", message.get("entities", []) + extracted, add_to_output=True
         )
 
     @staticmethod
@@ -204,7 +176,7 @@ class CRFEntityExtractor(EntityExtractor):
         def convert_entity(entity):
             return entity["start"], entity["end"], entity["entity"]
 
-        return [convert_entity(ent) for ent in example.get(ENTITIES_ATTRIBUTE, [])]
+        return [convert_entity(ent) for ent in example.get("entities", [])]
 
     def extract_entities(self, message: Message) -> List[Dict[Text, Any]]:
         """Take a sentence and return entities in json format"""
@@ -217,7 +189,7 @@ class CRFEntityExtractor(EntityExtractor):
         else:
             return []
 
-    def most_likely_entity(self, idx: int, entities: List[Any]) -> Tuple[Text, Any]:
+    def most_likely_entity(self, idx, entities):
         if len(entities) > idx:
             entity_probs = entities[idx]
         else:
@@ -238,29 +210,15 @@ class CRFEntityExtractor(EntityExtractor):
         else:
             return "", 0.0
 
-    def _create_entity_dict(
-        self,
-        message: Message,
-        tokens: Union["Doc", List[Token]],
-        start: int,
-        end: int,
-        entity: str,
-        confidence: float,
-    ) -> Dict[Text, Any]:
-        if isinstance(tokens, list):  # tokens is a list of Token
-            _start = tokens[start].start
-            _end = tokens[end].end
-            value = tokens[start].text
-            value += "".join(
-                [
-                    message.text[tokens[i - 1].end : tokens[i].start] + tokens[i].text
-                    for i in range(start + 1, end + 1)
-                ]
-            )
-        else:  # tokens is a Doc
+    def _create_entity_dict(self, tokens, start, end, entity, confidence):
+        if self.pos_features:
             _start = tokens[start].idx
             _end = tokens[start : end + 1].end_char
             value = tokens[start : end + 1].text
+        else:
+            _start = tokens[start].offset
+            _end = tokens[end].end
+            value = " ".join(t.text for t in tokens[start : end + 1])
 
         return {
             "start": _start,
@@ -271,21 +229,16 @@ class CRFEntityExtractor(EntityExtractor):
         }
 
     @staticmethod
-    def _entity_from_label(label) -> Text:
+    def _entity_from_label(label):
         return label[2:]
 
     @staticmethod
-    def _bilou_from_label(label) -> Optional[Text]:
+    def _bilou_from_label(label):
         if len(label) >= 2 and label[1] == "-":
             return label[0].upper()
         return None
 
-    @staticmethod
-    def _tokens_without_cls(message: Message) -> List[Token]:
-        # [:-1] to remove the CLS token from the list of tokens
-        return message.get(TOKENS_NAMES[TEXT_ATTRIBUTE])[:-1]
-
-    def _find_bilou_end(self, word_idx, entities) -> Any:
+    def _find_bilou_end(self, word_idx, entities):
         ent_word_idx = word_idx + 1
         finished = False
 
@@ -324,9 +277,7 @@ class CRFEntityExtractor(EntityExtractor):
                 )
         return ent_word_idx, confidence
 
-    def _handle_bilou_label(
-        self, word_idx: int, entities: List[Any]
-    ) -> Tuple[Any, Any, Any]:
+    def _handle_bilou_label(self, word_idx, entities):
         label, confidence = self.most_likely_entity(word_idx, entities)
         entity_label = self._entity_from_label(label)
 
@@ -346,9 +297,9 @@ class CRFEntityExtractor(EntityExtractor):
     ) -> List[Dict[Text, Any]]:
 
         if self.pos_features:
-            tokens = message.get(SPACY_DOCS[TEXT_ATTRIBUTE])
+            tokens = message.get("spacy_doc")
         else:
-            tokens = self._tokens_without_cls(message)
+            tokens = message.get("tokens")
 
         if len(tokens) != len(entities):
             raise Exception(
@@ -356,16 +307,12 @@ class CRFEntityExtractor(EntityExtractor):
             )
 
         if self.component_config["BILOU_flag"]:
-            return self._convert_bilou_tagging_to_entity_result(
-                message, tokens, entities
-            )
+            return self._convert_bilou_tagging_to_entity_result(tokens, entities)
         else:
             # not using BILOU tagging scheme, multi-word entities are split.
             return self._convert_simple_tagging_to_entity_result(tokens, entities)
 
-    def _convert_bilou_tagging_to_entity_result(
-        self, message: Message, tokens: List[Token], entities: List[Dict[Text, float]]
-    ):
+    def _convert_bilou_tagging_to_entity_result(self, tokens, entities):
         # using the BILOU tagging scheme
         json_ents = []
         word_idx = 0
@@ -376,7 +323,7 @@ class CRFEntityExtractor(EntityExtractor):
 
             if end_idx is not None:
                 ent = self._create_entity_dict(
-                    message, tokens, word_idx, end_idx, entity_label, confidence
+                    tokens, word_idx, end_idx, entity_label, confidence
                 )
                 json_ents.append(ent)
                 word_idx = end_idx + 1
@@ -384,20 +331,18 @@ class CRFEntityExtractor(EntityExtractor):
                 word_idx += 1
         return json_ents
 
-    def _convert_simple_tagging_to_entity_result(
-        self, tokens: List[Union[Token, Any]], entities: List[Any]
-    ) -> List[Dict[Text, Any]]:
+    def _convert_simple_tagging_to_entity_result(self, tokens, entities):
         json_ents = []
 
         for word_idx in range(len(tokens)):
             entity_label, confidence = self.most_likely_entity(word_idx, entities)
             word = tokens[word_idx]
             if entity_label != "O":
-                if self.pos_features and not isinstance(word, Token):
+                if self.pos_features:
                     start = word.idx
                     end = word.idx + len(word)
                 else:
-                    start = word.start
+                    start = word.offset
                     end = word.end
                 ent = {
                     "start": start,
@@ -417,7 +362,7 @@ class CRFEntityExtractor(EntityExtractor):
         model_dir: Text = None,
         model_metadata: Metadata = None,
         cached_component: Optional["CRFEntityExtractor"] = None,
-        **kwargs: Any,
+        **kwargs: Any
     ) -> "CRFEntityExtractor":
         from sklearn.externals import joblib
 
@@ -444,7 +389,10 @@ class CRFEntityExtractor(EntityExtractor):
 
         return {"file": file_name}
 
-    def _sentence_to_features(self, sentence: List[CRFToken]) -> List[Dict[Text, Any]]:
+    def _sentence_to_features(
+        self,
+        sentence: List[Tuple[Optional[Text], Optional[Text], Text, Dict[Text, Any]]],
+    ) -> List[Dict[Text, Any]]:
         """Convert a word into discrete features in self.crf_features,
         including word before and word after."""
 
@@ -488,32 +436,24 @@ class CRFEntityExtractor(EntityExtractor):
 
     @staticmethod
     def _sentence_to_labels(
-        sentence: List[
-            Tuple[
-                Optional[Text],
-                Optional[Text],
-                Text,
-                Dict[Text, Any],
-                Optional[Dict[str, Any]],
-            ]
-        ],
+        sentence: List[Tuple[Optional[Text], Optional[Text], Text, Dict[Text, Any]]],
     ) -> List[Text]:
 
-        return [label for _, _, label, _, _ in sentence]
+        return [label for _, _, label, _ in sentence]
 
     def _from_json_to_crf(
         self, message: Message, entity_offsets: List[Tuple[int, int, Text]]
-    ) -> List[CRFToken]:
+    ) -> List[Tuple[Optional[Text], Optional[Text], Text, Dict[Text, Any]]]:
         """Convert json examples to format of underlying crfsuite."""
 
         if self.pos_features:
             from spacy.gold import GoldParse  # pytype: disable=import-error
 
-            doc_or_tokens = message.get(SPACY_DOCS[TEXT_ATTRIBUTE])
+            doc_or_tokens = message.get("spacy_doc")
             gold = GoldParse(doc_or_tokens, entities=entity_offsets)
             ents = [l[5] for l in gold.orig_annot]
         else:
-            doc_or_tokens = self._tokens_without_cls(message)
+            doc_or_tokens = message.get("tokens")
             ents = self._bilou_tags_from_offsets(doc_or_tokens, entity_offsets)
 
         # collect badly annotated examples
@@ -523,15 +463,14 @@ class CRFEntityExtractor(EntityExtractor):
                 collected.append(t)
             elif collected:
                 collected_text = " ".join([t.text for t in collected])
-                raise_warning(
-                    f"Misaligned entity annotation for '{collected_text}' "
-                    f"in sentence '{message.text}' with intent "
-                    f"'{message.get('intent')}'. "
-                    f"Make sure the start and end values of the "
-                    f"annotated training examples end at token "
-                    f"boundaries (e.g. don't include trailing "
-                    f"whitespaces or punctuation).",
-                    docs=DOCS_URL_TRAINING_DATA_NLU,
+                logger.warning(
+                    "Misaligned entity annotation for '{}' "
+                    "in sentence '{}' with intent '{}'. "
+                    "Make sure the start and end values of the "
+                    "annotated training examples end at token "
+                    "boundaries (e.g. don't include trailing "
+                    "whitespaces or punctuation)."
+                    "".format(collected_text, message.text, message.get("intent"))
                 )
                 collected = []
 
@@ -544,9 +483,9 @@ class CRFEntityExtractor(EntityExtractor):
         return self._from_text_to_crf(message, ents)
 
     @staticmethod
-    def _bilou_tags_from_offsets(tokens, entities, missing: Text = "O") -> List[Text]:
+    def _bilou_tags_from_offsets(tokens, entities, missing="O"):
         # From spacy.spacy.GoldParse, under MIT License
-        starts = {token.start: i for i, token in enumerate(tokens)}
+        starts = {token.offset: i for i, token in enumerate(tokens)}
         ends = {token.end: i for i, token in enumerate(tokens)}
         bilou = ["-" for _ in tokens]
         # Handle entity cases
@@ -568,7 +507,7 @@ class CRFEntityExtractor(EntityExtractor):
             for i in range(start_char, end_char):
                 entity_chars.add(i)
         for n, token in enumerate(tokens):
-            for i in range(token.start, token.end):
+            for i in range(token.offset, token.end):
                 if i in entity_chars:
                     break
             else:
@@ -577,77 +516,42 @@ class CRFEntityExtractor(EntityExtractor):
         return bilou
 
     @staticmethod
-    def __pattern_of_token(message: Message, i: int) -> Dict:
-        if message.get(TOKENS_NAMES[TEXT_ATTRIBUTE]) is not None:
-            return message.get(TOKENS_NAMES[TEXT_ATTRIBUTE])[i].get("pattern", {})
+    def __pattern_of_token(message, i):
+        if message.get("tokens") is not None:
+            return message.get("tokens")[i].get("pattern", {})
         else:
             return {}
 
     @staticmethod
-    def __tag_of_token(token: Any) -> Text:
+    def __tag_of_token(token):
         if spacy.about.__version__ > "2" and token._.has("tag"):
             return token._.get("tag")
         else:
             return token.tag_
 
-    @staticmethod
-    def __get_dense_features(message: Message) -> Optional[List[Any]]:
-        features = message.get(DENSE_FEATURE_NAMES[TEXT_ATTRIBUTE])
-
-        if features is None:
-            return None
-
-        tokens = message.get(TOKENS_NAMES[TEXT_ATTRIBUTE], [])
-        if len(tokens) != len(features):
-            raise_warning(
-                f"Number of features ({len(features)}) for attribute "
-                f"'{DENSE_FEATURE_NAMES[TEXT_ATTRIBUTE]}' "
-                f"does not match number of tokens ({len(tokens)}). Set "
-                f"'return_sequence' to true in the corresponding featurizer in order "
-                f"to make use of the features in 'CRFEntityExtractor'.",
-                docs=DOCS_URL_COMPONENTS + "#crfentityextractor",
-            )
-            return None
-
-        # convert to python-crfsuite feature format
-        features_out = []
-        for feature in features:
-            feature_dict = {
-                str(index): token_features
-                for index, token_features in enumerate(feature)
-            }
-            converted = {"text_dense_features": feature_dict}
-            features_out.append(converted)
-        return features_out
-
     def _from_text_to_crf(
         self, message: Message, entities: List[Text] = None
-    ) -> List[CRFToken]:
+    ) -> List[Tuple[Optional[Text], Optional[Text], Text, Dict[Text, Any]]]:
         """Takes a sentence and switches it to crfsuite format."""
 
         crf_format = []
         if self.pos_features:
-            tokens = message.get(SPACY_DOCS[TEXT_ATTRIBUTE])
+            tokens = message.get("spacy_doc")
         else:
-            tokens = self._tokens_without_cls(message)
-
-        text_dense_features = self.__get_dense_features(message)
-
+            tokens = message.get("tokens")
         for i, token in enumerate(tokens):
             pattern = self.__pattern_of_token(message, i)
             entity = entities[i] if entities else "N/A"
             tag = self.__tag_of_token(token) if self.pos_features else None
-            dense_features = (
-                text_dense_features[i] if text_dense_features is not None else []
-            )
-
-            crf_format.append(
-                CRFToken(token.text, tag, entity, pattern, dense_features)
-            )
-
+            crf_format.append((token.text, tag, entity, pattern))
         return crf_format
 
-    def _train_model(self, df_train: List[List[CRFToken]]) -> None:
+    def _train_model(
+        self,
+        df_train: List[
+            List[Tuple[Optional[Text], Optional[Text], Text, Dict[Text, Any]]]
+        ],
+    ) -> None:
         """Train the crf tagger based on the training data."""
         import sklearn_crfsuite
 
