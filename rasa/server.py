@@ -845,14 +845,7 @@ def create_app(
                 response_data['intent']['name'] = 'AMAZON.FallbackIntent'
             del [response_data['intent_ranking']]
             del [response_data['entities']]
-            response_data['intent'] = response_data['intent']['name'] if response_data['intent'][
-                                                                             'name'] != "SeriesIntent" and \
-                                                                         response_data['intent'][
-                                                                             'name'] != "search_title" and \
-                                                                         response_data['intent'][
-                                                                             'name'] != "search_subject" and \
-                                                                         response_data['intent'][
-                                                                             'name'] != "search_author" else "SearchIntent"
+            response_data['intent'] = response_data['intent']['name'] if response_data['intent']['name'] != "SeriesIntent" and response_data['intent']['name'] != "search_title" and response_data['intent']['name'] != "search_subject" and response_data['intent']['name'] != "search_author" and response_data['intent']['name'] != "searchSubject" else "SearchIntent"
             response_data['reqtype'] = respFinder(response_data['intent'])
             return response.json(response_data)
 
