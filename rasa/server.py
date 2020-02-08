@@ -1317,6 +1317,8 @@ def create_app(
                         else:
                             data["name"] = 'program'
                             entityArray.append(data)
+                elif data["name"] == "language" or data["name"] == "library":
+                    entityArray.append(data)
                 elif data["name"] == "audience":
                     entityArray.append(data)
                 else:
