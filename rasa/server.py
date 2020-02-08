@@ -1317,34 +1317,10 @@ def create_app(
                         else:
                             data["name"] = 'program'
                             entityArray.append(data)
+                elif data["name"] == "audience":
+                    entityArray.append(data)
                 else:
                     pass
-        # elif intent == "hoursintent":
-        #     for data in entMap:
-        #         if data["name"] == "ORG":
-        #             data["name"] = "libname"
-        #             entityArray.append(data)
-        #         elif data["name"] == "time":
-        #             if data['value'] is dict:
-        #                 tempMap = {}
-        #                 tempMap['entity'] = 'from'
-        #                 tempMap['value'] = data['value']['from']
-        #                 entityArray.append(tempMap)
-        #                 tempMap = {}
-        #                 tempMap['entity'] = 'to'
-        #                 tempMap['value'] = data['value']['to']
-        #                 entityArray.append(tempMap)
-        #             else:
-        #                 data["name"] = 'edate'
-        #                 entityArray.append(data)
-        #             conditionMap["edate"] = data["value"]
-        #         elif data["name"] == "hdate":
-        #             if "edate" not in conditionMap:
-        #                 entityArray.append(data)
-        #         elif data["name"].lower() == 'date':
-        #             data["name"] = 'date'
-        #         else:
-        #             entityArray.append(data)
         elif intent == "optionintent":
             for data in entMap:
                 if data["name"] == 'ordinal':
