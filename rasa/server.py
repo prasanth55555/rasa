@@ -1386,6 +1386,17 @@ def create_app(
                 elif data["name"] == "hdate":
                     if "hdate" not in conditionMap:
                         entityArray.append(data)
+                elif data['name'] == 'address' or data['name'] == 'contact' or data['name'] == 'details':
+                    if data['name'] == 'address':
+                        data['name'] = 'libinfofilter'
+                        data['value'] = 'address'
+                    elif data['name'] == 'contact':
+                        data['name'] = 'libinfofilter'
+                        data['value'] = 'contact'
+                    elif data['name'] == 'details':
+                        data['name'] = 'libinfofilter'
+                        data['value'] = 'details'
+                    entityArray.append(data)
         elif intent == "updateholdintent":
             conditionMap = {}
             for data in entMap:
