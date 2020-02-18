@@ -1233,10 +1233,6 @@ def create_app(
                 else:
                     pass
         elif intent == "eventintent":
-            if 'week end' in utterence or 'weekend' in utterence:
-                data['name'] = 'weekend'
-                data['value'] = 'weekend'
-                entityArray.append(data)
             for data in entMap:
                 if data["name"] == "person":
                     if "present" in utterence and "organize" in utterence:
@@ -1325,6 +1321,12 @@ def create_app(
                     entityArray.append(data)
                 elif data["name"] == "audience":
                     entityArray.append(data)
+                if 'week end' in utterence or 'weekend' in utterence:
+                    if 'weekend' not in conditionMap:
+                        data['name'] = 'weekend'
+                        data['value'] = 'weekend'
+                        entityArray.append(data)
+                        conditionMap['weekend'] = 'weekend'
                 else:
                     pass
         elif intent == "optionintent":
