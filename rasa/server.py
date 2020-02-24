@@ -841,8 +841,8 @@ def create_app(
                 entMap = entityMapper(narrowedEntity, response_data['intent']['name'], response_data['text'])
                 response_data['slotvalues'] = entMap
             else:
-                response_data['intent'] = {}
                 response_data['intent']['name'] = 'AMAZON.FallbackIntent'
+                response_data['entities'] = response_data['slotvalues']
             del [response_data['intent_ranking']]
             del [response_data['entities']]
             response_data['intent'] = response_data['intent']['name'] if response_data['intent']['name'] != "SeriesIntent" and response_data['intent']['name'] != "search_title" and response_data['intent']['name'] != "search_subject" and response_data['intent']['name'] != "search_author" and response_data['intent']['name'] != "searchSubject" else "SearchIntent"
