@@ -836,7 +836,7 @@ def create_app(
                 )
             response_data = emulator.normalise_response_json(parsed_data)
             print(response_data)
-            if response_data['intent']['confidence'] >= 0.80:
+            if response_data['intent']['confidence'] >= 0.70:
                 narrowedEntity = entitySerializer(response_data['entities'])
                 entMap = entityMapper(narrowedEntity, response_data['intent']['name'], response_data['text'])
                 response_data['slotvalues'] = entMap
@@ -853,12 +853,29 @@ def create_app(
                                                                                  'name'] != "searchSubject" else "SearchIntent"
                 response_data['reqtype'] = respFinder(response_data['intent'])
             else:
-                response_data['slotvalues'] = response_data['entities']
+                response_data['intent'] = response_data['intent']['name'] if response_data['intent'][
+                                                                                 'name'] != "SeriesIntent" and \
+                                                                             response_data['intent'][
+                                                                                 'name'] != "search_title" and \
+                                                                             response_data['intent'][
+                                                                                 'name'] != "search_subject" and \
+                                                                             response_data['intent'][
+                                                                                 'name'] != "search_author" and \
+                                                                             response_data['intent'][
+                                                                                 'name'] != "searchSubject" else "SearchIntent"
+                respData = []
+                for each in response_data["intent_ranking"]:
+                    each["name"] = each['name'] if each['name'] != "SeriesIntent" and \
+                                                   each['name'] != "search_title" and \
+                                                   each['name'] != "search_subject" and \
+                                                   each['name'] != "search_author" and \
+                                                   each['name'] != "searchSubject" else "SearchIntent"
+                    respData.append(each)
+                response_data['slotvalues'] = didYouMean(response_data['entities'])
                 response_data['didYouMean'] = True
-                response_data['intent'] = response_data['intent']['name']
                 response_data['reqtype'] = respFinder(response_data['intent'])
-            del [response_data['intent_ranking']]
-            del [response_data['entities']]
+                response_data['intent_ranking'] = respData
+                del [response_data['entities']]
             return response.json(response_data)
 
         except Exception as e:
@@ -872,6 +889,36 @@ def create_app(
             return 'SessionEndedRequest'
         else:
             return 'IntentRequest'
+
+    def didYouMean(entity):
+        entityArray = []
+        data = {}
+        for ele in entity:
+            if ele['entity'] == 'time':
+                if 'from' in ele['value']:
+                    ele['value'] = json.dumps(ele['value']).replace("\'", "\"", -1)
+                    datamap = json.loads(ele['value'])
+                    tempMap = {}
+                    tempMap['name'] = 'from'
+                    fromDate = datamap['from'].split("T")
+                    tempMap['value'] = fromDate[0]
+                    entityArray.append(tempMap)
+                    tempMap = {}
+                    tempMap['name'] = 'to'
+                    todate = datamap['to'].split("T")
+                    tempMap['value'] = todate[0]
+                    entityArray.append(tempMap)
+                else:
+                    date = data["value"].split("T")
+                    data["name"] = 'date'
+                    data["value"] = date[0]
+                    entityArray.append(data)
+            else:
+                data['name'] = ele['entity']
+                data['value'] = ele['value']
+                entityArray.append(data)
+        return entityArray
+
 
     def entityMapper(entMap, intent, utterence):
         intent = intent.lower()
