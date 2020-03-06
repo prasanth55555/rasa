@@ -941,9 +941,9 @@ def create_app(
                 entMap.append(resMap)
                 resMap = {}
         if intent == "searchintent" or intent == "cancelholdintent" or intent == "renewintent" or intent == "listcheckOutintent" or intent == "listholdintent":
-            contentMap = {}
+            conditionMap = {}
             for data in entMap:
-                contentMap[data['name']] = data['value']
+                conditionMap[data['name']] = data['value']
             print("entity map value is ", entMap)
             for data in entMap:
                 if data["name"] == "WORK_OF_ART":
@@ -953,7 +953,7 @@ def create_app(
                                                                                            "").replace(
                         "serach for the title", "")
                     if data["value"] != "":
-                        if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'] == contentMap['filterphrase']:
+                        if 'filterphrase' in conditionMap and conditionMap['WORK_OF_ART'] == conditionMap['filterphrase']:
                             pass
                         else:
                             entityArray.append(data)
@@ -1124,7 +1124,7 @@ def create_app(
                                                                                                "").replace(
                             "serach for the title", "")
                         if data["value"] != "":
-                            if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'] == contentMap['filterphrase']:
+                            if 'filterphrase' in conditionMap and conditionMap['WORK_OF_ART'] == conditionMap['filterphrase']:
                                 pass
                             else:
                                 entityArray.append(data)
@@ -1183,7 +1183,7 @@ def create_app(
                                                                                                "").replace(
                             "serach for the title", "")
                         if data["value"] != "":
-                            if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'] == contentMap['filterphrase']:
+                            if 'filterphrase' in conditionMap and conditionMap['WORK_OF_ART'] == conditionMap['filterphrase']:
                                 pass
                             else:
                                 entityArray.append(data)
@@ -1242,7 +1242,7 @@ def create_app(
                                                                                                "").replace(
                             "serach for the title", "")
                         if data["value"] != "":
-                            if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'] == contentMap['filterphrase']:
+                            if 'filterphrase' in conditionMap and conditionMap['WORK_OF_ART'] == conditionMap['filterphrase']:
                                 pass
                             else:
                                 entityArray.append(data)
@@ -1487,7 +1487,7 @@ def create_app(
                                                                                            "").replace(
                         "serach for the title", "")
                     if data["value"] != "":
-                        if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'] == contentMap['filterphrase']:
+                        if 'filterphrase' in conditionMap and conditionMap['WORK_OF_ART'] == conditionMap['filterphrase']:
                             pass
                         else:
                             entityArray.append(data)
