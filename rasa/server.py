@@ -1471,7 +1471,7 @@ def create_app(
                         data['value'] = 'weekend'
                         entityArray.append(data)
                         conditionMap['weekend'] = 'weekend'
-        elif intent == "ListInTransitIntent":
+        elif intent == "listintransitintent":
             data['name'] = 'inTransit'
             data['value'] = 'in transit'
             entityArray.append(data)
