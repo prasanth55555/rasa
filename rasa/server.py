@@ -875,7 +875,7 @@ def create_app(
                 response_data['didYouMean'] = True
                 response_data['reqtype'] = respFinder(response_data['intent'])
                 response_data['intent_ranking'] = respData
-                del [response_data['entities']]
+                del response_data['entities']
             return response.json(response_data)
 
         except Exception as e:
@@ -1288,7 +1288,6 @@ def create_app(
                             entityArray.append(data)
                             conditionMap["subject"] = data["value"]
         elif intent == "checkedoutintent":
-            print("into CheckedOutIntent")
             for data in entMap:
                 if data["name"] == "checkedout" or data["name"] == "mtype":
                     entityArray.append(data)
@@ -1417,6 +1416,9 @@ def create_app(
             condMap = {}
             for data in entMap:
                 if data['name'] == 'libname':
+                    entityArray.append(data)
+                elif data['name'] == 'library':
+                    data['name'] = libname
                     entityArray.append(data)
                 elif data['name'] == 'libinfofilter':
                     entityArray.append(data)
