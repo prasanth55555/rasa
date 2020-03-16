@@ -891,9 +891,10 @@ def create_app(
             return 'IntentRequest'
 
     def didYouMean(entity):
+        print('entity ', entity)
         entityArray = []
-        data = {}
         for ele in entity:
+            data = {}
             if ele['entity'] == 'time':
                 if 'from' in ele['value']:
                     ele['value'] = json.dumps(ele['value']).replace("\'", "\"", -1)
@@ -919,8 +920,8 @@ def create_app(
                 entityArray.append(data)
         return entityArray
 
-
     def entityMapper(entMap, intent, utterence):
+        print(entMap, intent, utterence)
         intent = intent.lower()
         conditionMap = {}
         entityMap = {}
@@ -960,6 +961,7 @@ def create_app(
                             conditionMap["stitle"] = data["value"]
                     print("Entity array after work of art is ", entityArray)
                 elif data["name"] == "person":
+                    print(data)
                     if "stitle" in conditionMap:
                         if data["value"] != conditionMap["stitle"]:
                             data["name"] = "sauthor"
@@ -1017,7 +1019,8 @@ def create_app(
                     entityArray.append(data)
                 elif data["name"] == 'type' or data["name"] == 'timeline' or data[
                     "name"] == 'mtype' or data["name"] == 'renew' or data["name"] == 'renewAll' or data[
-                    "name"] == "cancelhold" or data["name"] == 'type' or data['name'] == 'reserve' or data['name'] == 'lang' or data['name'] == 'library':
+                    "name"] == "cancelhold" or data["name"] == 'type' or data['name'] == 'reserve' or data[
+                    'name'] == 'lang' or data['name'] == 'library':
                     data["name"] = data["name"].lower()
                     entityArray.append(data)
                 elif data["name"] == "pubyear":
@@ -1124,7 +1127,8 @@ def create_app(
                                                                                                "").replace(
                             "serach for the title", "")
                         if data["value"] != "":
-                            if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'] == contentMap['filterphrase']:
+                            if 'filterphrase' in conditionMap and conditionMap['WORK_OF_ART'] == conditionMap[
+                                'filterphrase']:
                                 pass
                             else:
                                 entityArray.append(data)
@@ -1183,7 +1187,8 @@ def create_app(
                                                                                                "").replace(
                             "serach for the title", "")
                         if data["value"] != "":
-                            if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'] == contentMap['filterphrase']:
+                            if 'filterphrase' in conditionMap and conditionMap['WORK_OF_ART'] == conditionMap[
+                                'filterphrase']:
                                 pass
                             else:
                                 entityArray.append(data)
@@ -1242,7 +1247,8 @@ def create_app(
                                                                                                "").replace(
                             "serach for the title", "")
                         if data["value"] != "":
-                            if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'] == contentMap['filterphrase']:
+                            if 'filterphrase' in conditionMap and conditionMap['WORK_OF_ART'] == conditionMap[
+                                'filterphrase']:
                                 pass
                             else:
                                 entityArray.append(data)
@@ -1318,7 +1324,7 @@ def create_app(
                             count = 0
                     elif "present" in utterence:
                         data["name"] = "presenter"
-                        data["value"] = data["value"].replace(" in","",-1).replace(" at","",-1)
+                        data["value"] = data["value"].replace(" in", "", -1).replace(" at", "", -1)
                         entityArray.append(data)
                     elif "organize" in utterence:
                         data["name"] = "organizer"
@@ -1327,7 +1333,7 @@ def create_app(
                 elif data["name"] == "time":
                     if 'from' in data['value']:
                         print("*********************************************************")
-                        data['value']= data['value'].replace("\'","\"",-1)
+                        data['value'] = data['value'].replace("\'", "\"", -1)
                         datamap = json.loads(data['value'])
                         tempMap = {}
                         tempMap['name'] = 'from'
@@ -1372,15 +1378,16 @@ def create_app(
                     data["name"] = "language"
                     entityArray.append(data)
                 elif data["name"] == "subject" or data["name"] == "title" or data["name"] == "program":
-                    if len(entMap) > 1:
-                        pass
-                    else:
+                    if 'searchQuery' not in conditionMap:
                         if 'on' in utterence:
                             data["name"] = 'title'
                             entityArray.append(data)
+                            conditionMap['searchQuery'] = True
                         else:
                             data["name"] = 'program'
                             entityArray.append(data)
+                    else:
+                        pass
                 elif data["name"] == "language" or data["name"] == "library" or data["name"] == "category":
                     entityArray.append(data)
                 elif data["name"] == "audience":
@@ -1421,7 +1428,7 @@ def create_app(
                 if data['name'] == 'libname':
                     entityArray.append(data)
                 elif data['name'] == 'library':
-                    data['name'] = libname
+                    data['name'] = 'libname'
                     entityArray.append(data)
                 elif data['name'] == 'libinfofilter':
                     entityArray.append(data)
@@ -1493,7 +1500,8 @@ def create_app(
                                                                                            "").replace(
                         "serach for the title", "")
                     if data["value"] != "":
-                        if 'filterphrase' in conditionMap and conditionMap['WORK_OF_ART'] == conditionMap['filterphrase']:
+                        if 'filterphrase' in conditionMap and conditionMap['WORK_OF_ART'] == conditionMap[
+                            'filterphrase']:
                             pass
                         else:
                             entityArray.append(data)
@@ -1553,7 +1561,7 @@ def create_app(
                         print(date)
                         data["name"] = 'hdate'
                         data["value"] = date[0]
-                        if 'currently' in condMap:
+                        if 'currently' in conditionMap:
                             pass
                         else:
                             entityArray.append(data)
@@ -1562,6 +1570,7 @@ def create_app(
         else:
             for data in entMap:
                 entityArray.append(data)
+        print(entityArray)
         return entityArray
 
     def entitySerializer(enityData):
