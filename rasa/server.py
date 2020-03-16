@@ -1368,6 +1368,9 @@ def create_app(
                 elif data["name"] == "ORG":
                     data["name"] = "libname"
                     entityArray.append(data)
+                elif data["name"] == "lang":
+                    data["name"] = "language"
+                    entityArray.append(data)
                 elif data["name"] == "subject" or data["name"] == "title" or data["name"] == "program":
                     if len(entMap) > 1:
                         pass
