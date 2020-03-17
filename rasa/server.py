@@ -1385,6 +1385,7 @@ def create_app(
                         else:
                             data["name"] = 'program'
                             entityArray.append(data)
+                            conditionMap['searchQuery'] = True
                     else:
                         pass
                 elif data["name"] == "language" or data["name"] == "library" or data["name"] == "category":
