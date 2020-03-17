@@ -891,7 +891,6 @@ def create_app(
             return 'IntentRequest'
 
     def didYouMean(entity):
-        print('entity ', entity)
         entityArray = []
         for ele in entity:
             data = {}
@@ -910,7 +909,7 @@ def create_app(
                     tempMap['value'] = todate[0]
                     entityArray.append(tempMap)
                 else:
-                    date = data["value"].split("T")
+                    date = ele["value"].split("T")
                     data["name"] = 'date'
                     data["value"] = date[0]
                     entityArray.append(data)
