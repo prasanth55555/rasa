@@ -973,6 +973,11 @@ def create_app(
                         data["name"] = "stitle"
                         entityArray.append(data)
                         conditionMap["stitle"] = data["value"]
+                elif data["name"] == "series":
+                    if "stitle" not in conditionMap:
+                        data["name"] = "stitle"
+                        entityArray.append(data)
+                        conditionMap["stitle"] = data["value"]
                 elif data["name"] == "sbook":
                     if "stitle" not in conditionMap:
                         if len(data["value"]) <= 50:
@@ -1388,7 +1393,7 @@ def create_app(
                             conditionMap['searchQuery'] = True
                     else:
                         pass
-                elif data["name"] == "language" or data["name"] == "library" or data["name"] == "category":
+                elif data["name"] == "language" or data["name"] == "library" or data["name"] == "category" or data["name"] == "libname":
                     entityArray.append(data)
                 elif data["name"] == "audience":
                     entityArray.append(data)
