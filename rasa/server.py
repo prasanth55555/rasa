@@ -1375,8 +1375,8 @@ def create_app(
                 elif data["name"] == "edate":
                     if "edate" not in conditionMap:
                         entityArray.append(data)
-                elif data["name"] == "ORG":
-                    data["name"] = "libname"
+                elif data["name"] == "ORG" or data["name"] == "libname":
+                    data["name"] = "library"
                     entityArray.append(data)
                 elif data["name"] == "lang":
                     data["name"] = "language"
@@ -1393,7 +1393,7 @@ def create_app(
                             conditionMap['searchQuery'] = True
                     else:
                         pass
-                elif data["name"] == "language" or data["name"] == "library" or data["name"] == "category" or data["name"] == "libname":
+                elif data["name"] == "language" or data["name"] == "library" or data["name"] == "category":
                     entityArray.append(data)
                 elif data["name"] == "audience":
                     entityArray.append(data)
