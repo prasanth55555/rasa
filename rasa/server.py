@@ -1482,12 +1482,12 @@ def create_app(
                         data['name'] = 'libinfofilter'
                         data['value'] = 'details'
                     entityArray.append(data)
-                if 'week end' in utterence or 'weekend' in utterence:
-                    if 'weekend' not in conditionMap:
-                        data['name'] = 'weekend'
-                        data['value'] = 'weekend'
-                        entityArray.append(data)
-                        conditionMap['weekend'] = 'weekend'
+            if 'week end' in utterence or 'weekend' in utterence:
+                if 'weekend' not in conditionMap:
+                    data['name'] = 'weekend'
+                    data['value'] = 'weekend'
+                    entityArray.append(data)
+                    conditionMap['weekend'] = 'weekend'
         elif intent == "listintransitintent":
             data = {}
             data['name'] = 'inTransit'
@@ -1497,6 +1497,8 @@ def create_app(
             conditionMap = {}
             for data in entMap:
                 if data['name'] == 'holdFilter' or data['name'] == 'mtype':
+                    if data['name'] == 'holdFilter':
+                        conditionMap['holdFilter'] = True
                     entityArray.append(data)
                 elif data["name"] == "WORK_OF_ART":
                     data["name"] = "stitle"
@@ -1571,7 +1573,17 @@ def create_app(
                         else:
                             entityArray.append(data)
                     conditionMap["hdate"] = data["value"]
-
+            if 'holdFilter' not in conditionMap:
+                if 'suspend' in utterence or 'deactivate' in utterence or 'disable' in utterence:
+                    data = {}
+                    data["name"] = 'holdFilter'
+                    data["value"] = 'suspend'
+                    entityArray.append(data)
+                elif 'activate' in utterence or 'reactivate' in utterence:
+                    data = {}
+                    data["name"] = 'holdFilter'
+                    data["value"] = 'activate'
+                    entityArray.append(data)
         else:
             for data in entMap:
                 entityArray.append(data)
