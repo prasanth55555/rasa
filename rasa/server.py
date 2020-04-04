@@ -1493,6 +1493,11 @@ def create_app(
             data['name'] = 'inTransit'
             data['value'] = 'in transit'
             entityArray.append(data)
+        elif intent == "switchpatronintent":
+            for data in entMap:
+                if data['name'] == 'person':
+                    data['name'] = 'patronname'
+                    entityArray.append(data)
         elif intent == "updateholdintent":
             conditionMap = {}
             for data in entMap:
