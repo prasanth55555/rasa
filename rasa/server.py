@@ -1018,6 +1018,8 @@ def create_app(
                         entityArray.append(data)
                 elif data["name"] == "sauthor":
                     entityArray.append(data)
+                elif data["name"] == "mtype":
+                    entityArray.append(data)
                 elif data["name"] == "language":
                     data["name"] = 'lang'
                     entityArray.append(data)
