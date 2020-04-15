@@ -818,12 +818,14 @@ def create_app(
             "in order to obtain the intent and extracted entities.",
         )
         emulation_mode = request.args.get("emulation_mode")
+        print("[821]")
         emulator = _create_emulator(emulation_mode)
-
+        print("[823]emulator = _create_emulator(emulation_mode)")
         try:
             data = emulator.normalise_request_json(request.json)
             try:
                 data['text'] = data['text'].lower().replace("\'", "")
+                print("827")
                 parsed_data = await app.agent.parse_message_using_nlu_interpreter(
                     data.get("text")
                 )

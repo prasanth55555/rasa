@@ -433,8 +433,9 @@ class Agent(object):
                 }
 
         """
-
+        print("436,processor = self.create_processor()")
         processor = self.create_processor()
+        print("[438]message = UserMessage(message_data)")
         message = UserMessage(message_data)
         return await processor._parse_message(message)
 
