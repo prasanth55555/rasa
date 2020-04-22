@@ -818,14 +818,12 @@ def create_app(
             "in order to obtain the intent and extracted entities.",
         )
         emulation_mode = request.args.get("emulation_mode")
-        print("[821]")
         emulator = _create_emulator(emulation_mode)
-        print("[823]emulator = _create_emulator(emulation_mode)")
+
         try:
             data = emulator.normalise_request_json(request.json)
             try:
-                data['text'] = data['text'].lower().replace("\'", "")
-                print("827")
+                data['text'] = re.sub('[^a-z0-9 ]+', '', data['text'].lower())
                 parsed_data = await app.agent.parse_message_using_nlu_interpreter(
                     data.get("text")
                 )
@@ -958,6 +956,8 @@ def create_app(
                         if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'] == contentMap['filterphrase']:
                             pass
                         else:
+                            if "seriesFilter" in contentMap:
+                                data["name"] = "sseries"
                             entityArray.append(data)
                             conditionMap["stitle"] = data["value"]
                     print("Entity array after work of art is ", entityArray)
@@ -973,17 +973,23 @@ def create_app(
                 elif data["name"] == "sBook":
                     if "stitle" not in conditionMap:
                         data["name"] = "stitle"
+                        if "seriesFilter" in contentMap:
+                            data["name"] = "sseries"
                         entityArray.append(data)
                         conditionMap["stitle"] = data["value"]
                 elif data["name"] == "series":
                     if "stitle" not in conditionMap:
                         data["name"] = "stitle"
+                        if "seriesFilter" in contentMap:
+                            data["name"] = "sseries"
                         entityArray.append(data)
                         conditionMap["stitle"] = data["value"]
                 elif data["name"] == "sbook":
                     if "stitle" not in conditionMap:
                         if len(data["value"]) <= 50:
                             data["name"] = "stitle"
+                            if "seriesFilter" in contentMap:
+                                data["name"] = "sseries"
                             entityArray.append(data)
                             conditionMap["stitle"] = data["value"]
                         else:
@@ -1308,6 +1314,9 @@ def create_app(
                 else:
                     pass
         elif intent == "eventintent":
+            contentMap = {}
+            for data in entMap:
+                contentMap[data['name']] = data['value']
             for data in entMap:
                 if data["name"] == "person":
                     if "present" in utterence and "organize" in utterence:
@@ -1338,42 +1347,44 @@ def create_app(
                         data["name"] = "organizer"
                         data["value"] = data["value"].replace(" in", "", -1).replace(" at", "", -1)
                         entityArray.append(data)
-                elif data["name"] == "time":
-                    if 'from' in data['value']:
-                        print("*********************************************************")
-                        data['value'] = data['value'].replace("\'", "\"", -1)
-                        datamap = json.loads(data['value'])
-                        tempMap = {}
-                        tempMap['name'] = 'from'
-                        fromDate = datamap['from'].split("T")
-                        tempMap['value'] = fromDate[0]
-                        entityArray.append(tempMap)
-                        tempMap = {}
-                        tempMap['name'] = 'to'
-                        todate = datamap['to'].split("T")
-                        tempMap['value'] = todate[0]
-                        entityArray.append(tempMap)
-                    else:
-                        date = data["value"].split("T")
-                        print(type(data["value"]))
-                        print(date)
-                        data["name"] = 'edate'
-                        data["value"] = date[0]
-                        entityArray.append(data)
-                        tempMap = {}
-                        if 'week' in utterence:
-                            tempMap['name'] = 'dateFilter'
-                            tempMap['value'] = 'week'
+                    elif data["name"] == "time":
+                        if 'from' in data['value']:
+                            print("*********************************************************")
+                            data['value'] = data['value'].replace("\'", "\"", -1)
+                            datamap = json.loads(data['value'])
+                            tempMap = {}
+                            tempMap['name'] = 'from'
+                            fromDate = datamap['from'].split("T")
+                            if 'timeline' in contentMap and (contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and ("weekend" in contentMap or 'filter' in contentMap):
+                                tempMap['value'] = datetime.datetime.strptime(fromDate[0], '%Y-%m-%d').date()
+                                tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                            else:
+                                tempMap['value'] = fromDate[0]
                             entityArray.append(tempMap)
-                        elif 'month' in utterence:
-                            tempMap['name'] = 'dateFilter'
-                            tempMap['value'] = 'month'
+                            tempMap = {}
+                            tempMap['name'] = 'to'
+                            todate = datamap['to'].split("T")
+                            if 'timeline' in contentMap and (contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and ("weekend" in contentMap or 'filter' in contentMap):
+                                tempMap['value'] = datetime.datetime.strptime(todate[0], '%Y-%m-%d').date()
+                                tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                            else:
+                                tempMap['value'] = todate[0]
                             entityArray.append(tempMap)
-                        elif 'year' in utterence:
-                            tempMap['name'] = 'dateFilter'
-                            tempMap['value'] = 'year'
-                            entityArray.append(tempMap)
-                    conditionMap["edate"] = data["value"]
+                        else:
+                            date = data["value"].split("T")
+                            print(type(data["value"]))
+                            print(date)
+                            data["name"] = 'hdate'
+                            if 'timeline' in contentMap and (contentMap['timeline'] == "future" or contentMap['timeline'] == "next")and ("weekend" in contentMap or 'filter' in contentMap):
+                                tempMap['value'] = datetime.datetime.strptime(date[0], '%Y-%m-%d').date()
+                                tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                            else:
+                                tempMap['value'] = date[0]
+                            if 'currently' in condMap:
+                                pass
+                            else:
+                                entityArray.append(data)
+                        conditionMap["hdate"] = data["value"]
                 elif data["name"].lower() == 'date':
                     data["name"] = 'date'
                 elif data["name"] == "edate":
@@ -1432,6 +1443,9 @@ def create_app(
                 if data["name"] == 'subject':
                     entityArray.append(data)
         elif intent == "libraryinfointent":
+            contentMap = {}
+            for data in entMap:
+                contentMap[data['name']] = data['value']
             condMap = {}
             for data in entMap:
                 if data['name'] == 'libname':
@@ -1452,19 +1466,31 @@ def create_app(
                         tempMap = {}
                         tempMap['name'] = 'from'
                         fromDate = datamap['from'].split("T")
-                        tempMap['value'] = fromDate[0]
+                        if 'timeline' in contentMap and (contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and ("weekend" in contentMap or 'filter' in contentMap):
+                            tempMap['value'] = datetime.datetime.strptime(fromDate[0], '%Y-%m-%d').date()
+                            tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                        else:
+                            tempMap['value'] = fromDate[0]
                         entityArray.append(tempMap)
                         tempMap = {}
                         tempMap['name'] = 'to'
                         todate = datamap['to'].split("T")
-                        tempMap['value'] = todate[0]
+                        if 'timeline' in contentMap and (contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and ("weekend" in contentMap or 'filter' in contentMap):
+                            tempMap['value'] = datetime.datetime.strptime(todate[0], '%Y-%m-%d').date()
+                            tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                        else:
+                            tempMap['value'] = todate[0]
                         entityArray.append(tempMap)
                     else:
                         date = data["value"].split("T")
                         print(type(data["value"]))
                         print(date)
                         data["name"] = 'hdate'
-                        data["value"] = date[0]
+                        if 'timeline' in contentMap and (contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and ("weekend" in contentMap or 'filter' in contentMap):
+                            tempMap['value'] = datetime.datetime.strptime(date[0], '%Y-%m-%d').date()
+                            tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                        else:
+                            tempMap['value'] = date[0]
                         if 'currently' in condMap:
                             pass
                         else:
