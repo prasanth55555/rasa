@@ -1374,6 +1374,7 @@ def create_app(
                             tempMap['value'] = todate[0]
                         entityArray.append(tempMap)
                     else:
+                        tempMap = {}
                         date = data["value"].split("T")
                         print(type(data["value"]))
                         print(date)
@@ -1412,7 +1413,8 @@ def create_app(
                             conditionMap['searchQuery'] = True
                     else:
                         pass
-                elif data["name"] == "language" or data["name"] == "library" or data["name"] == "category" or data["name"] == "audience":
+                elif data["name"] == "language" or data["name"] == "library" or data["name"] == "category" or data[
+                    "name"] == "audience":
                     entityArray.append(data)
                 elif data["name"] == "weekend":
                     conditionMap['weekend'] = 'weekend'
@@ -1496,6 +1498,7 @@ def create_app(
                         print(type(data["value"]))
                         print(date)
                         data["name"] = 'hdate'
+                        tempMap = {}
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next"):
                             tempMap['value'] = datetime.datetime.strptime(date[0], '%Y-%m-%d').date()
