@@ -1412,9 +1412,10 @@ def create_app(
                             conditionMap['searchQuery'] = True
                     else:
                         pass
-                elif data["name"] == "language" or data["name"] == "library" or data["name"] == "category":
+                elif data["name"] == "language" or data["name"] == "library" or data["name"] == "category" or data["name"] == "audience":
                     entityArray.append(data)
-                elif data["name"] == "audience" or data['name'] == 'weekend':
+                elif data["name"] == "weekend":
+                    conditionMap['weekend'] = 'weekend'
                     entityArray.append(data)
                 if 'week end' in utterence or 'weekend' in utterence:
                     if 'weekend' not in conditionMap:
@@ -1461,6 +1462,9 @@ def create_app(
                     entityArray.append(data)
                 elif data['name'] == 'currently':
                     condMap['currently'] = 'now'
+                    entityArray.append(data)
+                elif data["name"] == "weekend":
+                    conditionMap['weekend'] = 'weekend'
                     entityArray.append(data)
                 elif data["name"] == "time":
                     if 'from' in data['value']:
