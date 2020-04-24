@@ -36,7 +36,7 @@ from rasa.core.events import Event
 from rasa.core.test import test
 from rasa.core.trackers import DialogueStateTracker, EventVerbosity
 from rasa.core.utils import dump_obj_as_str_to_file, AvailableEndpoints
-from rasa.model import get_model_subdirectories, fingerprint_from_path
+from rasa.model import get_model_subdirectories, fingerlogger.debug_from_path
 from rasa.nlu.emulators.no_emulator import NoEmulator
 from rasa.nlu.test import run_evaluation
 from rasa.core.tracker_store import TrackerStore
@@ -344,12 +344,12 @@ def create_app(
     @requires_auth(app, auth_token)
     @ensure_loaded_agent(app)
     async def status(request: Request):
-        """Respond with the model name and the fingerprint of that model."""
+        """Respond with the model name and the fingerlogger.debug of that model."""
 
         return response.json(
             {
                 "model_file": app.agent.model_directory,
-                "fingerprint": fingerprint_from_path(app.agent.model_directory),
+                "fingerlogger.debug": fingerlogger.debug_from_path(app.agent.model_directory),
             }
         )
 
@@ -836,7 +836,7 @@ def create_app(
                     "An unexpected error occurred. Error: {}".format(e),
                 )
             response_data = emulator.normalise_response_json(parsed_data)
-            print(response_data)
+            logger.debug(response_data)
             if response_data['intent']['confidence'] >= 0.70:
                 narrowedEntity = entitySerializer(response_data['entities'])
                 entMap = entityMapper(narrowedEntity, response_data['intent']['name'], response_data['text'])
@@ -921,18 +921,18 @@ def create_app(
         return entityArray
 
     def entityMapper(entMap, intent, utterence):
-        print(entMap, intent, utterence)
+        logger.debug(entMap, intent, utterence)
         intent = intent.lower()
         conditionMap = {}
         entityMap = {}
         entityArray = []
         count = 0
-        print(entMap, intent, utterence)
+        logger.debug(entMap, intent, utterence)
         newMap = {}
         for data in entMap:
             newMap[data['name']] = data['value']
         if newMap.__contains__("WORK_OF_ART") and newMap.__contains__("subject"):
-            print("into special condition")
+            logger.debug("into special condition")
             newMap.__delitem__("WORK_OF_ART")
             entMap = []
             resMap = {}
@@ -945,7 +945,7 @@ def create_app(
             contentMap = {}
             for data in entMap:
                 contentMap[data['name']] = data['value']
-            print("entity map value is ", entMap)
+            logger.debug("entity map value is ", entMap)
             for data in entMap:
                 if data["name"] == "WORK_OF_ART":
                     data["name"] = "stitle"
@@ -961,9 +961,9 @@ def create_app(
                                 data["name"] = "sseries"
                             entityArray.append(data)
                             conditionMap["stitle"] = data["value"]
-                    print("Entity array after work of art is ", entityArray)
+                    logger.debug("Entity array after work of art is ", entityArray)
                 elif data["name"] == "person":
-                    print(data)
+                    logger.debug(data)
                     if "stitle" in conditionMap:
                         if data["value"] != conditionMap["stitle"]:
                             data["name"] = "sauthor"
@@ -1000,15 +1000,15 @@ def create_app(
                                 entityArray.append(data)
                                 conditionMap["subject"] = data["value"]
                     else:
-                        print(entityArray)
+                        logger.debug(entityArray)
                         entityArray.pop(0)
                         conditionMap["stitle"] = data["value"].lower()
                         data["value"] = data["value"].lower()
                         data["name"] = "stitle"
                         entityArray.append(data)
-                        print(entityArray)
+                        logger.debug(entityArray)
                 elif data["name"] == "subject":
-                    print("Entity array before subject is ", entityArray)
+                    logger.debug("Entity array before subject is ", entityArray)
                     if "subject" not in conditionMap:
                         data["name"] = data["name"].lower()
                         entityArray.append(data)
@@ -1064,7 +1064,7 @@ def create_app(
                     if data["value"] != "":
                         entityArray.append(data)
                         conditionMap["sseries"] = data["value"]
-                        print("Entity array after work of art is ", entityArray)
+                        logger.debug("Entity array after work of art is ", entityArray)
                 elif data["name"] == "person":
                     if "sseries" in conditionMap:
                         if data["value"] != conditionMap["sseries"]:
@@ -1090,7 +1090,7 @@ def create_app(
                         entityArray.append(data)
                         conditionMap["sseries"] = data["value"]
                 elif data["name"] == "subject":
-                    print("Entity array before subject is ", entityArray)
+                    logger.debug("Entity array before subject is ", entityArray)
                     if "subject" not in conditionMap:
                         data["name"] = data["name"].lower()
                         entityArray.append(data)
@@ -1148,7 +1148,7 @@ def create_app(
                             else:
                                 entityArray.append(data)
                                 conditionMap["stitle"] = data["value"]
-                        print("Entity array after work of art is ", entityArray)
+                        logger.debug("Entity array after work of art is ", entityArray)
                     elif data["name"] == "person":
                         if "stitle" in conditionMap:
                             if data["value"] != conditionMap["stitle"]:
@@ -1175,15 +1175,15 @@ def create_app(
                                     entityArray.append(data)
                                     conditionMap["subject"] = data["value"]
                         else:
-                            print(entityArray)
+                            logger.debug(entityArray)
                             entityArray.pop(0)
                             conditionMap["stitle"] = data["value"].lower()
                             data["value"] = data["value"].lower()
                             data["name"] = "stitle"
                             entityArray.append(data)
-                            print(entityArray)
+                            logger.debug(entityArray)
                     elif data["name"] == "subject":
-                        print("Entity array before subject is ", entityArray)
+                        logger.debug("Entity array before subject is ", entityArray)
                         if "subject" not in conditionMap:
                             data["name"] = data["name"].lower()
                             entityArray.append(data)
@@ -1208,7 +1208,7 @@ def create_app(
                             else:
                                 entityArray.append(data)
                                 conditionMap["stitle"] = data["value"]
-                        print("Entity array after work of art is ", entityArray)
+                        logger.debug("Entity array after work of art is ", entityArray)
                     elif data["name"] == "person":
                         if "stitle" in conditionMap:
                             if data["value"] != conditionMap["stitle"]:
@@ -1235,15 +1235,15 @@ def create_app(
                                     entityArray.append(data)
                                     conditionMap["subject"] = data["value"]
                         else:
-                            print(entityArray)
+                            logger.debug(entityArray)
                             entityArray.pop(0)
                             conditionMap["stitle"] = data["value"].lower()
                             data["value"] = data["value"].lower()
                             data["name"] = "stitle"
                             entityArray.append(data)
-                            print(entityArray)
+                            logger.debug(entityArray)
                     elif data["name"] == "subject":
-                        print("Entity array before subject is ", entityArray)
+                        logger.debug("Entity array before subject is ", entityArray)
                         if "subject" not in conditionMap:
                             data["name"] = data["name"].lower()
                             entityArray.append(data)
@@ -1268,7 +1268,7 @@ def create_app(
                             else:
                                 entityArray.append(data)
                                 conditionMap["stitle"] = data["value"]
-                        print("Entity array after work of art is ", entityArray)
+                        logger.debug("Entity array after work of art is ", entityArray)
                     elif data["name"] == "person":
                         if "stitle" in conditionMap:
                             if data["value"] != conditionMap["stitle"]:
@@ -1295,15 +1295,15 @@ def create_app(
                                     entityArray.append(data)
                                     conditionMap["subject"] = data["value"]
                         else:
-                            print(entityArray)
+                            logger.debug(entityArray)
                             entityArray.pop(0)
                             conditionMap["stitle"] = data["value"].lower()
                             data["value"] = data["value"].lower()
                             data["name"] = "stitle"
                             entityArray.append(data)
-                            print(entityArray)
+                            logger.debug(entityArray)
                     elif data["name"] == "subject":
-                        print("Entity array before subject is ", entityArray)
+                        logger.debug("Entity array before subject is ", entityArray)
                         if "subject" not in conditionMap:
                             data["name"] = data["name"].lower()
                             entityArray.append(data)
@@ -1350,7 +1350,6 @@ def create_app(
                         entityArray.append(data)
                 elif data["name"] == "time":
                     if 'from' in data['value']:
-                        print("*********************************************************")
                         data['value'] = data['value'].replace("\'", "\"", -1)
                         datamap = json.loads(data['value'])
                         tempMap = {}
@@ -1376,8 +1375,8 @@ def create_app(
                     else:
                         tempMap = {}
                         date = data["value"].split("T")
-                        print(type(data["value"]))
-                        print(date)
+                        logger.debug(type(data["value"]))
+                        logger.debug(date)
                         data["name"] = 'hdate'
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next"):
@@ -1428,14 +1427,23 @@ def create_app(
                 else:
                     pass
         elif intent == "optionintent":
+            conditionMap = {}
             for data in entMap:
-                if data["name"] == 'ordinal':
-                    data["name"] = 'option'
-                    data['value'] = str(data['value'])
-                    entityArray.append(data)
+                if data["name"] == 'ordinal' or data["name"] == "cardinal":
+                    if "option" not in conditionMap:
+                        data["name"] = 'option'
+                        data['value'] = str(data['value'])
+                        conditionMap['option'] = data["value"]
+                        entityArray.append(data)
                 elif data["name"] == 'number':
-                    data["name"] = 'option'
-                    data['value'] = str(data['value'])
+                    if "option" not in conditionMap:
+                        data["name"] = 'option'
+                        data['value'] = str(data['value'])
+                        conditionMap['option'] = data["value"]
+                        entityArray.append(data)
+                elif data["name"]  == "person":
+                    data["name"] = "patronname"
+                    conditionMap["person"] = data["value"]
                     entityArray.append(data)
         elif intent == "listpickupintent":
             for data in entMap:
@@ -1470,7 +1478,7 @@ def create_app(
                     entityArray.append(data)
                 elif data["name"] == "time":
                     if 'from' in data['value']:
-                        print("*********************************************************")
+                        logger.debug("*********************************************************")
                         data['value'] = data['value'].replace("\'", "\"", -1)
                         datamap = json.loads(data['value'])
                         tempMap = {}
@@ -1495,8 +1503,8 @@ def create_app(
                         entityArray.append(tempMap)
                     else:
                         date = data["value"].split("T")
-                        print(type(data["value"]))
-                        print(date)
+                        logger.debug(type(data["value"]))
+                        logger.debug(date)
                         data["name"] = 'hdate'
                         tempMap = {}
                         if 'timeline' in contentMap and (
@@ -1562,7 +1570,7 @@ def create_app(
                         else:
                             entityArray.append(data)
                             conditionMap["stitle"] = data["value"]
-                    print("Entity array after work of art is ", entityArray)
+                    logger.debug("Entity array after work of art is ", entityArray)
                 elif data["name"] == "person":
                     if "stitle" in conditionMap:
                         if data["value"] != conditionMap["stitle"]:
@@ -1589,16 +1597,16 @@ def create_app(
                                 entityArray.append(data)
                                 conditionMap["subject"] = data["value"]
                     else:
-                        print(entityArray)
+                        logger.debug(entityArray)
                         entityArray.pop(0)
                         conditionMap["stitle"] = data["value"].lower()
                         data["value"] = data["value"].lower()
                         data["name"] = "stitle"
                         entityArray.append(data)
-                        print(entityArray)
+                        logger.debug(entityArray)
                 elif data["name"] == "time":
                     if 'from' in data['value']:
-                        print("*********************************************************")
+                        logger.debug("*********************************************************")
                         data['value'] = data['value'].replace("\'", "\"", -1)
                         datamap = json.loads(data['value'])
                         tempMap = {}
@@ -1613,8 +1621,8 @@ def create_app(
                         entityArray.append(tempMap)
                     else:
                         date = data["value"].split("T")
-                        print(type(data["value"]))
-                        print(date)
+                        logger.debug(type(data["value"]))
+                        logger.debug(date)
                         data["name"] = 'hdate'
                         data["value"] = date[0]
                         if 'currently' in conditionMap:
@@ -1636,7 +1644,7 @@ def create_app(
         else:
             for data in entMap:
                 entityArray.append(data)
-        print(entityArray)
+        logger.debug(entityArray)
         return entityArray
 
     def entitySerializer(enityData):
