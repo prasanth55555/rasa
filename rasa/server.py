@@ -36,7 +36,7 @@ from rasa.core.events import Event
 from rasa.core.test import test
 from rasa.core.trackers import DialogueStateTracker, EventVerbosity
 from rasa.core.utils import dump_obj_as_str_to_file, AvailableEndpoints
-from rasa.model import get_model_subdirectories, fingerlogger.debug_from_path
+from rasa.model import get_model_subdirectories, fingerprint_from_path
 from rasa.nlu.emulators.no_emulator import NoEmulator
 from rasa.nlu.test import run_evaluation
 from rasa.core.tracker_store import TrackerStore
@@ -267,7 +267,7 @@ async def _load_agent(
             action_endpoint=action_endpoint,
         )
     except Exception as e:
-        logger.debug(traceback.format_exc())
+        print(traceback.format_exc())
         raise ErrorResponse(
             500, "LoadingError", "An unexpected error occurred. Error: {}".format(e)
         )
@@ -344,12 +344,12 @@ def create_app(
     @requires_auth(app, auth_token)
     @ensure_loaded_agent(app)
     async def status(request: Request):
-        """Respond with the model name and the fingerlogger.debug of that model."""
+        """Respond with the model name and the fingerprint of that model."""
 
         return response.json(
             {
                 "model_file": app.agent.model_directory,
-                "fingerlogger.debug": fingerlogger.debug_from_path(app.agent.model_directory),
+                "fingerprint": fingerprint_from_path(app.agent.model_directory),
             }
         )
 
@@ -379,7 +379,7 @@ def create_app(
             state = tracker.current_state(verbosity)
             return response.json(state)
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "ConversationError",
@@ -427,7 +427,7 @@ def create_app(
 
             return response.json(tracker.current_state(verbosity))
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "ConversationError",
@@ -456,7 +456,7 @@ def create_app(
             app.agent.tracker_store.save(tracker)
             return response.json(tracker.current_state(verbosity))
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "ConversationError",
@@ -490,7 +490,7 @@ def create_app(
             state = tracker.export_stories(e2e=True)
             return response.text(state)
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "ConversationError",
@@ -524,7 +524,7 @@ def create_app(
                 conversation_id, action_to_execute, output_channel, policy, confidence
             )
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "ConversationError",
@@ -553,7 +553,7 @@ def create_app(
             )
             return response.json(responses)
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "ConversationError",
@@ -593,7 +593,7 @@ def create_app(
             tracker = await app.agent.log_message(user_message)
             return response.json(tracker.current_state(verbosity))
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "ConversationError",
@@ -656,7 +656,7 @@ def create_app(
                 "Provided domain file is invalid. Error: {}".format(e),
             )
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "TrainingError",
@@ -708,7 +708,7 @@ def create_app(
             evaluation = await test(stories, app.agent, e2e=use_e2e)
             return response.json(evaluation)
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "TestingError",
@@ -749,7 +749,7 @@ def create_app(
             evaluation = run_evaluation(data_path, nlu_model)
             return response.json(evaluation)
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "TestingError",
@@ -776,7 +776,7 @@ def create_app(
                 sender_id, request_params, app.agent.domain.slots
             )
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 400,
                 "BadRequest",
@@ -803,7 +803,7 @@ def create_app(
                 }
             )
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "PredictionError",
@@ -829,14 +829,14 @@ def create_app(
                     data.get("text")
                 )
             except Exception as e:
-                logger.debug(traceback.format_exc())
+                print(traceback.format_exc())
                 raise ErrorResponse(
                     400,
                     "ParsingError",
                     "An unexpected error occurred. Error: {}".format(e),
                 )
             response_data = emulator.normalise_response_json(parsed_data)
-            logger.debug(response_data)
+            print(response_data)
             if response_data['intent']['confidence'] >= 0.70:
                 narrowedEntity = entitySerializer(response_data['entities'])
                 entMap = entityMapper(narrowedEntity, response_data['intent']['name'], response_data['text'])
@@ -880,7 +880,7 @@ def create_app(
             return response.json(response_data)
 
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500, "ParsingError", "An unexpected error occurred. Error: {}".format(e)
             )
@@ -921,18 +921,18 @@ def create_app(
         return entityArray
 
     def entityMapper(entMap, intent, utterence):
-        logger.debug(entMap, intent, utterence)
+        print(entMap, intent, utterence)
         intent = intent.lower()
         conditionMap = {}
         entityMap = {}
         entityArray = []
         count = 0
-        logger.debug(entMap, intent, utterence)
+        print(entMap, intent, utterence)
         newMap = {}
         for data in entMap:
             newMap[data['name']] = data['value']
         if newMap.__contains__("WORK_OF_ART") and newMap.__contains__("subject"):
-            logger.debug("into special condition")
+            print("into special condition")
             newMap.__delitem__("WORK_OF_ART")
             entMap = []
             resMap = {}
@@ -945,7 +945,7 @@ def create_app(
             contentMap = {}
             for data in entMap:
                 contentMap[data['name']] = data['value']
-            logger.debug("entity map value is ", entMap)
+            print("entity map value is ", entMap)
             for data in entMap:
                 if data["name"] == "WORK_OF_ART":
                     data["name"] = "stitle"
@@ -961,9 +961,9 @@ def create_app(
                                 data["name"] = "sseries"
                             entityArray.append(data)
                             conditionMap["stitle"] = data["value"]
-                    logger.debug("Entity array after work of art is ", entityArray)
+                    print("Entity array after work of art is ", entityArray)
                 elif data["name"] == "person":
-                    logger.debug(data)
+                    print(data)
                     if "stitle" in conditionMap:
                         if data["value"] != conditionMap["stitle"]:
                             data["name"] = "sauthor"
@@ -1000,15 +1000,15 @@ def create_app(
                                 entityArray.append(data)
                                 conditionMap["subject"] = data["value"]
                     else:
-                        logger.debug(entityArray)
+                        print(entityArray)
                         entityArray.pop(0)
                         conditionMap["stitle"] = data["value"].lower()
                         data["value"] = data["value"].lower()
                         data["name"] = "stitle"
                         entityArray.append(data)
-                        logger.debug(entityArray)
+                        print(entityArray)
                 elif data["name"] == "subject":
-                    logger.debug("Entity array before subject is ", entityArray)
+                    print("Entity array before subject is ", entityArray)
                     if "subject" not in conditionMap:
                         data["name"] = data["name"].lower()
                         entityArray.append(data)
@@ -1064,7 +1064,7 @@ def create_app(
                     if data["value"] != "":
                         entityArray.append(data)
                         conditionMap["sseries"] = data["value"]
-                        logger.debug("Entity array after work of art is ", entityArray)
+                        print("Entity array after work of art is ", entityArray)
                 elif data["name"] == "person":
                     if "sseries" in conditionMap:
                         if data["value"] != conditionMap["sseries"]:
@@ -1090,7 +1090,7 @@ def create_app(
                         entityArray.append(data)
                         conditionMap["sseries"] = data["value"]
                 elif data["name"] == "subject":
-                    logger.debug("Entity array before subject is ", entityArray)
+                    print("Entity array before subject is ", entityArray)
                     if "subject" not in conditionMap:
                         data["name"] = data["name"].lower()
                         entityArray.append(data)
@@ -1148,7 +1148,7 @@ def create_app(
                             else:
                                 entityArray.append(data)
                                 conditionMap["stitle"] = data["value"]
-                        logger.debug("Entity array after work of art is ", entityArray)
+                        print("Entity array after work of art is ", entityArray)
                     elif data["name"] == "person":
                         if "stitle" in conditionMap:
                             if data["value"] != conditionMap["stitle"]:
@@ -1175,15 +1175,15 @@ def create_app(
                                     entityArray.append(data)
                                     conditionMap["subject"] = data["value"]
                         else:
-                            logger.debug(entityArray)
+                            print(entityArray)
                             entityArray.pop(0)
                             conditionMap["stitle"] = data["value"].lower()
                             data["value"] = data["value"].lower()
                             data["name"] = "stitle"
                             entityArray.append(data)
-                            logger.debug(entityArray)
+                            print(entityArray)
                     elif data["name"] == "subject":
-                        logger.debug("Entity array before subject is ", entityArray)
+                        print("Entity array before subject is ", entityArray)
                         if "subject" not in conditionMap:
                             data["name"] = data["name"].lower()
                             entityArray.append(data)
@@ -1208,7 +1208,7 @@ def create_app(
                             else:
                                 entityArray.append(data)
                                 conditionMap["stitle"] = data["value"]
-                        logger.debug("Entity array after work of art is ", entityArray)
+                        print("Entity array after work of art is ", entityArray)
                     elif data["name"] == "person":
                         if "stitle" in conditionMap:
                             if data["value"] != conditionMap["stitle"]:
@@ -1235,15 +1235,15 @@ def create_app(
                                     entityArray.append(data)
                                     conditionMap["subject"] = data["value"]
                         else:
-                            logger.debug(entityArray)
+                            print(entityArray)
                             entityArray.pop(0)
                             conditionMap["stitle"] = data["value"].lower()
                             data["value"] = data["value"].lower()
                             data["name"] = "stitle"
                             entityArray.append(data)
-                            logger.debug(entityArray)
+                            print(entityArray)
                     elif data["name"] == "subject":
-                        logger.debug("Entity array before subject is ", entityArray)
+                        print("Entity array before subject is ", entityArray)
                         if "subject" not in conditionMap:
                             data["name"] = data["name"].lower()
                             entityArray.append(data)
@@ -1268,7 +1268,7 @@ def create_app(
                             else:
                                 entityArray.append(data)
                                 conditionMap["stitle"] = data["value"]
-                        logger.debug("Entity array after work of art is ", entityArray)
+                        print("Entity array after work of art is ", entityArray)
                     elif data["name"] == "person":
                         if "stitle" in conditionMap:
                             if data["value"] != conditionMap["stitle"]:
@@ -1295,15 +1295,15 @@ def create_app(
                                     entityArray.append(data)
                                     conditionMap["subject"] = data["value"]
                         else:
-                            logger.debug(entityArray)
+                            print(entityArray)
                             entityArray.pop(0)
                             conditionMap["stitle"] = data["value"].lower()
                             data["value"] = data["value"].lower()
                             data["name"] = "stitle"
                             entityArray.append(data)
-                            logger.debug(entityArray)
+                            print(entityArray)
                     elif data["name"] == "subject":
-                        logger.debug("Entity array before subject is ", entityArray)
+                        print("Entity array before subject is ", entityArray)
                         if "subject" not in conditionMap:
                             data["name"] = data["name"].lower()
                             entityArray.append(data)
@@ -1375,8 +1375,8 @@ def create_app(
                     else:
                         tempMap = {}
                         date = data["value"].split("T")
-                        logger.debug(type(data["value"]))
-                        logger.debug(date)
+                        print(type(data["value"]))
+                        print(date)
                         data["name"] = 'hdate'
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next"):
@@ -1478,7 +1478,7 @@ def create_app(
                     entityArray.append(data)
                 elif data["name"] == "time":
                     if 'from' in data['value']:
-                        logger.debug("*********************************************************")
+                        print("*********************************************************")
                         data['value'] = data['value'].replace("\'", "\"", -1)
                         datamap = json.loads(data['value'])
                         tempMap = {}
@@ -1503,8 +1503,8 @@ def create_app(
                         entityArray.append(tempMap)
                     else:
                         date = data["value"].split("T")
-                        logger.debug(type(data["value"]))
-                        logger.debug(date)
+                        print(type(data["value"]))
+                        print(date)
                         data["name"] = 'hdate'
                         tempMap = {}
                         if 'timeline' in contentMap and (
@@ -1570,7 +1570,7 @@ def create_app(
                         else:
                             entityArray.append(data)
                             conditionMap["stitle"] = data["value"]
-                    logger.debug("Entity array after work of art is ", entityArray)
+                    print("Entity array after work of art is ", entityArray)
                 elif data["name"] == "person":
                     if "stitle" in conditionMap:
                         if data["value"] != conditionMap["stitle"]:
@@ -1597,16 +1597,16 @@ def create_app(
                                 entityArray.append(data)
                                 conditionMap["subject"] = data["value"]
                     else:
-                        logger.debug(entityArray)
+                        print(entityArray)
                         entityArray.pop(0)
                         conditionMap["stitle"] = data["value"].lower()
                         data["value"] = data["value"].lower()
                         data["name"] = "stitle"
                         entityArray.append(data)
-                        logger.debug(entityArray)
+                        print(entityArray)
                 elif data["name"] == "time":
                     if 'from' in data['value']:
-                        logger.debug("*********************************************************")
+                        print("*********************************************************")
                         data['value'] = data['value'].replace("\'", "\"", -1)
                         datamap = json.loads(data['value'])
                         tempMap = {}
@@ -1621,8 +1621,8 @@ def create_app(
                         entityArray.append(tempMap)
                     else:
                         date = data["value"].split("T")
-                        logger.debug(type(data["value"]))
-                        logger.debug(date)
+                        print(type(data["value"]))
+                        print(date)
                         data["name"] = 'hdate'
                         data["value"] = date[0]
                         if 'currently' in conditionMap:
@@ -1644,7 +1644,7 @@ def create_app(
         else:
             for data in entMap:
                 entityArray.append(data)
-        logger.debug(entityArray)
+        print(entityArray)
         return entityArray
 
     def entitySerializer(enityData):
@@ -1688,7 +1688,7 @@ def create_app(
             try:
                 model_server = EndpointConfig.from_dict(model_server)
             except TypeError as e:
-                logger.debug(traceback.format_exc())
+                print(traceback.format_exc())
                 raise ErrorResponse(
                     400,
                     "BadRequest",
@@ -1699,7 +1699,7 @@ def create_app(
             model_path, model_server, remote_storage, endpoints
         )
 
-        logger.debug("Successfully loaded model '{}'.".format(model_path))
+        print("Successfully loaded model '{}'.".format(model_path))
         return response.json(None, status=204)
 
     @app.delete("/model")
@@ -1709,7 +1709,7 @@ def create_app(
 
         app.agent = Agent()
 
-        logger.debug("Successfully unload model '{}'.".format(model_file))
+        print("Successfully unload model '{}'.".format(model_file))
         return response.json(None, status=204)
 
     @app.get("/domain")
