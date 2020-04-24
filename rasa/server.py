@@ -1,45 +1,55 @@
+import asyncio
+import functools
 import logging
-import json
+import multiprocessing
 import os
 import tempfile
 import traceback
+import typing
 import re, datetime
-from functools import wraps, reduce
+from functools import reduce, wraps
 from inspect import isawaitable
 from typing import Any, Callable, List, Optional, Text, Union
 
+import rasa
+import rasa.core.utils
+from rasa.utils.common import raise_warning, arguments_of
+import rasa.utils.endpoints
+import rasa.utils.io
+from rasa import model
+from rasa.constants import (
+    DEFAULT_DOMAIN_PATH,
+    DEFAULT_MODELS_PATH,
+    DEFAULT_RESPONSE_TIMEOUT,
+    DOCS_BASE_URL,
+    MINIMUM_COMPATIBLE_VERSION,
+)
+from rasa.core.agent import Agent, load_agent
+from rasa.core.brokers.broker import EventBroker
+from rasa.core.channels.channel import (
+    CollectingOutputChannel,
+    OutputChannel,
+    UserMessage,
+)
+from rasa.core.domain import InvalidDomain
+from rasa.core.events import Event
+from rasa.core.lock_store import LockStore
+from rasa.core.test import test
+from rasa.core.tracker_store import TrackerStore
+from rasa.core.trackers import DialogueStateTracker, EventVerbosity
+from rasa.core.utils import AvailableEndpoints
+from rasa.nlu.emulators.no_emulator import NoEmulator
+from rasa.nlu.test import run_evaluation
+from rasa.utils.endpoints import EndpointConfig
 from sanic import Sanic, response
 from sanic.request import Request
+from sanic.response import HTTPResponse
 from sanic_cors import CORS
 from sanic_jwt import Initialize, exceptions
 
-import rasa
-import rasa.utils.common
-import rasa.utils.endpoints
-import rasa.utils.io
-from rasa.core.domain import InvalidDomain
-from rasa.utils.endpoints import EndpointConfig
-from rasa.constants import (
-    MINIMUM_COMPATIBLE_VERSION,
-    DEFAULT_MODELS_PATH,
-    DEFAULT_DOMAIN_PATH,
-    DOCS_BASE_URL,
-)
-from rasa.core import broker
-from rasa.core.agent import load_agent, Agent
-from rasa.core.channels.channel import (
-    UserMessage,
-    CollectingOutputChannel,
-    OutputChannel,
-)
-from rasa.core.events import Event
-from rasa.core.test import test
-from rasa.core.trackers import DialogueStateTracker, EventVerbosity
-from rasa.core.utils import dump_obj_as_str_to_file, AvailableEndpoints
-from rasa.model import get_model_subdirectories, fingerlogger.debug_from_path
-from rasa.nlu.emulators.no_emulator import NoEmulator
-from rasa.nlu.test import run_evaluation
-from rasa.core.tracker_store import TrackerStore
+if typing.TYPE_CHECKING:
+    from ssl import SSLContext
+    from rasa.core.processor import MessageProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +58,14 @@ USE_LATEST_INPUT_CHANNEL_AS_OUTPUT_CHANNEL = "latest"
 
 
 class ErrorResponse(Exception):
-    def __init__(self, status, reason, message, details=None, help_url=None):
+    def __init__(
+        self,
+        status: int,
+        reason: Text,
+        message: Text,
+        details: Any = None,
+        help_url: Optional[Text] = None,
+    ) -> None:
         self.error_info = {
             "version": rasa.__version__,
             "status": "failure",
@@ -66,19 +83,28 @@ def _docs(sub_url: Text) -> Text:
     return DOCS_BASE_URL + sub_url
 
 
-def ensure_loaded_agent(app: Sanic):
-    """Wraps a request handler ensuring there is a loaded and usable agent."""
+def ensure_loaded_agent(app: Sanic, require_core_is_ready=False):
+    """Wraps a request handler ensuring there is a loaded and usable agent.
+
+    Require the agent to have a loaded Core model if `require_core_is_ready` is
+    `True`.
+    """
 
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
-            if not app.agent or not app.agent.is_ready():
+            # noinspection PyUnresolvedReferences
+            if not app.agent or not (
+                app.agent.is_core_ready()
+                if require_core_is_ready
+                else app.agent.is_ready()
+            ):
                 raise ErrorResponse(
                     409,
                     "Conflict",
                     "No agent loaded. To continue processing, a "
                     "model of a trained agent needs to be loaded.",
-                    help_url=_docs("/user-guide/running-the-server/"),
+                    help_url=_docs("/user-guide/configuring-http-api/"),
                 )
 
             return f(*args, **kwargs)
@@ -93,7 +119,7 @@ def requires_auth(app: Sanic, token: Optional[Text] = None) -> Callable[[Any], A
 
     def decorator(f: Callable[[Any, Any], Any]) -> Callable[[Any, Any], Any]:
         def conversation_id_from_args(args: Any, kwargs: Any) -> Optional[Text]:
-            argnames = rasa.utils.common.arguments_of(f)
+            argnames = arguments_of(f)
 
             try:
                 sender_id_arg_idx = argnames.index("conversation_id")
@@ -132,7 +158,7 @@ def requires_auth(app: Sanic, token: Optional[Text] = None) -> Callable[[Any], A
                     result = await result
                 return result
             elif app.config.get("USE_JWT") and request.app.auth.is_authenticated(
-                    request
+                request
             ):
                 if sufficient_scope(request, *args, **kwargs):
                     result = f(request, *args, **kwargs)
@@ -144,7 +170,7 @@ def requires_auth(app: Sanic, token: Optional[Text] = None) -> Callable[[Any], A
                     "NotAuthorized",
                     "User has insufficient permissions.",
                     help_url=_docs(
-                        "/user-guide/running-the-server/#security-considerations"
+                        "/user-guide/configuring-http-api/#security-considerations"
                     ),
                 )
             elif token is None and app.config.get("USE_JWT") is None:
@@ -158,7 +184,7 @@ def requires_auth(app: Sanic, token: Optional[Text] = None) -> Callable[[Any], A
                 "NotAuthenticated",
                 "User is not authenticated.",
                 help_url=_docs(
-                    "/user-guide/running-the-server/#security-considerations"
+                    "/user-guide/configuring-http-api/#security-considerations"
                 ),
             )
 
@@ -168,8 +194,9 @@ def requires_auth(app: Sanic, token: Optional[Text] = None) -> Callable[[Any], A
 
 
 def event_verbosity_parameter(
-        request: Request, default_verbosity: EventVerbosity
+    request: Request, default_verbosity: EventVerbosity
 ) -> EventVerbosity:
+    """Create `EventVerbosity` object using request params if present."""
     event_verbosity_str = request.args.get(
         "include_events", default_verbosity.name
     ).upper()
@@ -186,29 +213,75 @@ def event_verbosity_parameter(
         )
 
 
-def obtain_tracker_store(agent: "Agent", conversation_id: Text) -> DialogueStateTracker:
-    tracker = agent.tracker_store.get_or_create_tracker(conversation_id)
+async def get_tracker(
+    processor: "MessageProcessor", conversation_id: Text
+) -> DialogueStateTracker:
+    """Get tracker object from `MessageProcessor`."""
+    tracker = await processor.get_tracker_with_session_start(conversation_id)
+    _validate_tracker(tracker, conversation_id)
+
+    # `_validate_tracker` ensures we can't return `None` so `Optional` is not needed
+    return tracker  # pytype: disable=bad-return-type
+
+
+def _validate_tracker(
+    tracker: Optional[DialogueStateTracker], conversation_id: Text
+) -> None:
     if not tracker:
         raise ErrorResponse(
             409,
             "Conflict",
-            "Could not retrieve tracker with id '{}'. Most likely "
-            "because there is no domain set on the agent.".format(conversation_id),
+            f"Could not retrieve tracker with ID '{conversation_id}'. Most likely "
+            f"because there is no domain set on the agent.",
         )
-    return tracker
 
 
 def validate_request_body(request: Request, error_message: Text):
+    """Check if `request` has a body."""
     if not request.body:
         raise ErrorResponse(400, "BadRequest", error_message)
 
 
 async def authenticate(request: Request):
+    """Callback for authentication failed."""
     raise exceptions.AuthenticationFailed(
         "Direct JWT authentication not supported. You should already have "
         "a valid JWT from an authentication provider, Rasa will just make "
         "sure that the token is valid, but not issue new tokens."
     )
+
+
+def create_ssl_context(
+    ssl_certificate: Optional[Text],
+    ssl_keyfile: Optional[Text],
+    ssl_ca_file: Optional[Text] = None,
+    ssl_password: Optional[Text] = None,
+) -> Optional["SSLContext"]:
+    """Create an SSL context if a proper certificate is passed.
+
+    Args:
+        ssl_certificate: path to the SSL client certificate
+        ssl_keyfile: path to the SSL key file
+        ssl_ca_file: path to the SSL CA file for verification (optional)
+        ssl_password: SSL private key password (optional)
+
+    Returns:
+        SSL context if a valid certificate chain can be loaded, `None` otherwise.
+
+    """
+
+    if ssl_certificate:
+        import ssl
+
+        ssl_context = ssl.create_default_context(
+            purpose=ssl.Purpose.CLIENT_AUTH, cafile=ssl_ca_file
+        )
+        ssl_context.load_cert_chain(
+            ssl_certificate, keyfile=ssl_keyfile, password=ssl_password
+        )
+        return ssl_context
+    else:
+        return None
 
 
 def _create_emulator(mode: Optional[Text]) -> NoEmulator:
@@ -240,10 +313,11 @@ def _create_emulator(mode: Optional[Text]) -> NoEmulator:
 
 
 async def _load_agent(
-        model_path: Optional[Text] = None,
-        model_server: Optional[EndpointConfig] = None,
-        remote_storage: Optional[Text] = None,
-        endpoints: Optional[AvailableEndpoints] = None,
+    model_path: Optional[Text] = None,
+    model_server: Optional[EndpointConfig] = None,
+    remote_storage: Optional[Text] = None,
+    endpoints: Optional[AvailableEndpoints] = None,
+    lock_store: Optional[LockStore] = None,
 ) -> Agent:
     try:
         tracker_store = None
@@ -251,12 +325,14 @@ async def _load_agent(
         action_endpoint = None
 
         if endpoints:
-            _broker = broker.from_endpoint_config(endpoints.event_broker)
-            tracker_store = TrackerStore.find_tracker_store(
-                None, endpoints.tracker_store, _broker
+            broker = EventBroker.create(endpoints.event_broker)
+            tracker_store = TrackerStore.create(
+                endpoints.tracker_store, event_broker=broker
             )
             generator = endpoints.nlg
             action_endpoint = endpoints.action
+            if not lock_store:
+                lock_store = LockStore.create(endpoints.lock_store)
 
         loaded_agent = await load_agent(
             model_path,
@@ -264,26 +340,44 @@ async def _load_agent(
             remote_storage,
             generator=generator,
             tracker_store=tracker_store,
+            lock_store=lock_store,
             action_endpoint=action_endpoint,
         )
     except Exception as e:
         logger.debug(traceback.format_exc())
         raise ErrorResponse(
-            500, "LoadingError", "An unexpected error occurred. Error: {}".format(e)
+            500, "LoadingError", f"An unexpected error occurred. Error: {e}"
         )
 
     if not loaded_agent:
         raise ErrorResponse(
             400,
             "BadRequest",
-            "Agent with name '{}' could not be loaded.".format(model_path),
+            f"Agent with name '{model_path}' could not be loaded.",
             {"parameter": "model", "in": "query"},
         )
 
     return loaded_agent
 
 
+def configure_cors(
+    app: Sanic, cors_origins: Union[Text, List[Text], None] = ""
+) -> None:
+    """Configure CORS origins for the given app."""
+
+    # Workaround so that socketio works with requests from other origins.
+    # https://github.com/miguelgrinberg/python-socketio/issues/205#issuecomment-493769183
+    app.config.CORS_AUTOMATIC_OPTIONS = True
+    app.config.CORS_SUPPORTS_CREDENTIALS = True
+
+    CORS(
+        app, resources={r"/*": {"origins": cors_origins or ""}}, automatic_options=True
+    )
+
+
 def add_root_route(app: Sanic):
+    """Add '/' route to return hello."""
+
     @app.get("/")
     async def hello(request: Request):
         """Check if the server is running and responds with the version."""
@@ -291,21 +385,19 @@ def add_root_route(app: Sanic):
 
 
 def create_app(
-        agent: Optional["Agent"] = None,
-        cors_origins: Union[Text, List[Text]] = "*",
-        auth_token: Optional[Text] = None,
-        jwt_secret: Optional[Text] = None,
-        jwt_method: Text = "HS256",
-        endpoints: Optional[AvailableEndpoints] = None,
+    agent: Optional["Agent"] = None,
+    cors_origins: Union[Text, List[Text], None] = "*",
+    auth_token: Optional[Text] = None,
+    response_timeout: int = DEFAULT_RESPONSE_TIMEOUT,
+    jwt_secret: Optional[Text] = None,
+    jwt_method: Text = "HS256",
+    endpoints: Optional[AvailableEndpoints] = None,
 ):
     """Class representing a Rasa HTTP server."""
 
     app = Sanic(__name__)
-    app.config.RESPONSE_TIMEOUT = 60 * 60
-
-    CORS(
-        app, resources={r"/*": {"origins": cors_origins or ""}}, automatic_options=True
-    )
+    app.config.RESPONSE_TIMEOUT = response_timeout
+    configure_cors(app, cors_origins)
 
     # Setup the Sanic-JWT extension
     if jwt_secret and jwt_method:
@@ -322,6 +414,9 @@ def create_app(
         )
 
     app.agent = agent
+    # Initialize shared object of type unsigned int for tracking
+    # the number of active training processes
+    app.active_training_processes = multiprocessing.Value("I", 0)
 
     @app.exception(ErrorResponse)
     async def handle_error_response(request: Request, exception: ErrorResponse):
@@ -344,12 +439,14 @@ def create_app(
     @requires_auth(app, auth_token)
     @ensure_loaded_agent(app)
     async def status(request: Request):
-        """Respond with the model name and the fingerlogger.debug of that model."""
+        """Respond with the model name and the fingerprint of that model."""
 
         return response.json(
             {
-                "model_file": app.agent.model_directory,
-                "fingerlogger.debug": fingerlogger.debug_from_path(app.agent.model_directory),
+                "model_file": app.agent.path_to_model_archive
+                or app.agent.model_directory,
+                "fingerprint": model.fingerprint_from_path(app.agent.model_directory),
+                "num_active_training_jobs": app.active_training_processes.value,
             }
         )
 
@@ -358,19 +455,11 @@ def create_app(
     @ensure_loaded_agent(app)
     async def retrieve_tracker(request: Request, conversation_id: Text):
         """Get a dump of a conversation's tracker including its events."""
-        if not app.agent.tracker_store:
-            raise ErrorResponse(
-                409,
-                "Conflict",
-                "No tracker store available. Make sure to "
-                "configure a tracker store when starting "
-                "the server.",
-            )
 
         verbosity = event_verbosity_parameter(request, EventVerbosity.AFTER_RESTART)
         until_time = rasa.utils.endpoints.float_arg(request, "until")
 
-        tracker = obtain_tracker_store(app.agent, conversation_id)
+        tracker = await get_tracker(app.agent.create_processor(), conversation_id)
 
         try:
             if until_time is not None:
@@ -381,9 +470,7 @@ def create_app(
         except Exception as e:
             logger.debug(traceback.format_exc())
             raise ErrorResponse(
-                500,
-                "ConversationError",
-                "An unexpected error occurred. Error: {}".format(e),
+                500, "ConversationError", f"An unexpected error occurred. Error: {e}"
             )
 
     @app.post("/conversations/<conversation_id>/tracker/events")
@@ -397,7 +484,30 @@ def create_app(
             "to the state of a conversation.",
         )
 
+        verbosity = event_verbosity_parameter(request, EventVerbosity.AFTER_RESTART)
+
+        try:
+            async with app.agent.lock_store.lock(conversation_id):
+                processor = app.agent.create_processor()
+                tracker = processor.get_tracker(conversation_id)
+                _validate_tracker(tracker, conversation_id)
+
+                events = _get_events_from_request_body(request)
+
+                for event in events:
+                    tracker.update(event, app.agent.domain)
+                app.agent.tracker_store.save(tracker)
+
+            return response.json(tracker.current_state(verbosity))
+        except Exception as e:
+            logger.debug(traceback.format_exc())
+            raise ErrorResponse(
+                500, "ConversationError", f"An unexpected error occurred. Error: {e}"
+            )
+
+    def _get_events_from_request_body(request: Request) -> List[Event]:
         events = request.json
+
         if not isinstance(events, list):
             events = [events]
 
@@ -405,9 +515,9 @@ def create_app(
         events = [event for event in events if event]
 
         if not events:
-            logger.warning(
-                "Append event called, but could not extract a valid event. "
-                "Request JSON: {}".format(request.json)
+            raise_warning(
+                f"Append event called, but could not extract a valid event. "
+                f"Request JSON: {request.json}"
             )
             raise ErrorResponse(
                 400,
@@ -416,23 +526,7 @@ def create_app(
                 {"parameter": "", "in": "body"},
             )
 
-        verbosity = event_verbosity_parameter(request, EventVerbosity.AFTER_RESTART)
-        tracker = obtain_tracker_store(app.agent, conversation_id)
-
-        try:
-            for event in events:
-                tracker.update(event, app.agent.domain)
-
-            app.agent.tracker_store.save(tracker)
-
-            return response.json(tracker.current_state(verbosity))
-        except Exception as e:
-            logger.debug(traceback.format_exc())
-            raise ErrorResponse(
-                500,
-                "ConversationError",
-                "An unexpected error occurred. Error: {}".format(e),
-            )
+        return events
 
     @app.put("/conversations/<conversation_id>/tracker/events")
     @requires_auth(app, auth_token)
@@ -448,19 +542,19 @@ def create_app(
         verbosity = event_verbosity_parameter(request, EventVerbosity.AFTER_RESTART)
 
         try:
-            tracker = DialogueStateTracker.from_dict(
-                conversation_id, request.json, app.agent.domain.slots
-            )
+            async with app.agent.lock_store.lock(conversation_id):
+                tracker = DialogueStateTracker.from_dict(
+                    conversation_id, request.json, app.agent.domain.slots
+                )
 
-            # will override an existing tracker with the same id!
-            app.agent.tracker_store.save(tracker)
+                # will override an existing tracker with the same id!
+                app.agent.tracker_store.save(tracker)
+
             return response.json(tracker.current_state(verbosity))
         except Exception as e:
             logger.debug(traceback.format_exc())
             raise ErrorResponse(
-                500,
-                "ConversationError",
-                "An unexpected error occurred. Error: {}".format(e),
+                500, "ConversationError", f"An unexpected error occurred. Error: {e}"
             )
 
     @app.get("/conversations/<conversation_id>/story")
@@ -468,17 +562,9 @@ def create_app(
     @ensure_loaded_agent(app)
     async def retrieve_story(request: Request, conversation_id: Text):
         """Get an end-to-end story corresponding to this conversation."""
-        if not app.agent.tracker_store:
-            raise ErrorResponse(
-                409,
-                "Conflict",
-                "No tracker store available. Make sure to "
-                "configure a tracker store when starting "
-                "the server.",
-            )
 
         # retrieve tracker and set to requested state
-        tracker = obtain_tracker_store(app.agent, conversation_id)
+        tracker = await get_tracker(app.agent.create_processor(), conversation_id)
 
         until_time = rasa.utils.endpoints.float_arg(request, "until")
 
@@ -492,9 +578,7 @@ def create_app(
         except Exception as e:
             logger.debug(traceback.format_exc())
             raise ErrorResponse(
-                500,
-                "ConversationError",
-                "An unexpected error occurred. Error: {}".format(e),
+                500, "ConversationError", f"An unexpected error occurred. Error: {e}"
             )
 
     @app.post("/conversations/<conversation_id>/execute")
@@ -518,20 +602,80 @@ def create_app(
         verbosity = event_verbosity_parameter(request, EventVerbosity.AFTER_RESTART)
 
         try:
-            tracker = obtain_tracker_store(app.agent, conversation_id)
-            output_channel = _get_output_channel(request, tracker)
-            await app.agent.execute_action(
-                conversation_id, action_to_execute, output_channel, policy, confidence
-            )
+            async with app.agent.lock_store.lock(conversation_id):
+                tracker = await get_tracker(
+                    app.agent.create_processor(), conversation_id
+                )
+                output_channel = _get_output_channel(request, tracker)
+                await app.agent.execute_action(
+                    conversation_id,
+                    action_to_execute,
+                    output_channel,
+                    policy,
+                    confidence,
+                )
+
         except Exception as e:
             logger.debug(traceback.format_exc())
             raise ErrorResponse(
-                500,
-                "ConversationError",
-                "An unexpected error occurred. Error: {}".format(e),
+                500, "ConversationError", f"An unexpected error occurred. Error: {e}"
             )
 
-        tracker = obtain_tracker_store(app.agent, conversation_id)
+        tracker = await get_tracker(app.agent.create_processor(), conversation_id)
+        state = tracker.current_state(verbosity)
+
+        response_body = {"tracker": state}
+
+        if isinstance(output_channel, CollectingOutputChannel):
+            response_body["messages"] = output_channel.messages
+
+        return response.json(response_body)
+
+    @app.post("/conversations/<conversation_id>/trigger_intent")
+    @requires_auth(app, auth_token)
+    @ensure_loaded_agent(app)
+    async def trigger_intent(request: Request, conversation_id: Text) -> HTTPResponse:
+        request_params = request.json
+
+        intent_to_trigger = request_params.get("name")
+        entities = request_params.get("entities", [])
+
+        if not intent_to_trigger:
+            raise ErrorResponse(
+                400,
+                "BadRequest",
+                "Name of the intent not provided in request body.",
+                {"parameter": "name", "in": "body"},
+            )
+
+        verbosity = event_verbosity_parameter(request, EventVerbosity.AFTER_RESTART)
+
+        try:
+            async with app.agent.lock_store.lock(conversation_id):
+                tracker = await get_tracker(
+                    app.agent.create_processor(), conversation_id
+                )
+                output_channel = _get_output_channel(request, tracker)
+                if intent_to_trigger not in app.agent.domain.intents:
+                    raise ErrorResponse(
+                        404,
+                        "NotFound",
+                        f"The intent {trigger_intent} does not exist in the domain.",
+                    )
+                await app.agent.trigger_intent(
+                    intent_name=intent_to_trigger,
+                    entities=entities,
+                    output_channel=output_channel,
+                    tracker=tracker,
+                )
+        except ErrorResponse:
+            raise
+        except Exception as e:
+            logger.debug(traceback.format_exc())
+            raise ErrorResponse(
+                500, "ConversationError", f"An unexpected error occurred. Error: {e}"
+            )
+
         state = tracker.current_state(verbosity)
 
         response_body = {"tracker": state}
@@ -547,7 +691,7 @@ def create_app(
     async def predict(request: Request, conversation_id: Text):
         try:
             # Fetches the appropriate bot response in a json format
-            responses = app.agent.predict_next(conversation_id)
+            responses = await app.agent.predict_next(conversation_id)
             responses["scores"] = sorted(
                 responses["scores"], key=lambda k: (-k["score"], k["action"])
             )
@@ -555,9 +699,7 @@ def create_app(
         except Exception as e:
             logger.debug(traceback.format_exc())
             raise ErrorResponse(
-                500,
-                "ConversationError",
-                "An unexpected error occurred. Error: {}".format(e),
+                500, "ConversationError", f"An unexpected error occurred. Error: {e}"
             )
 
     @app.post("/conversations/<conversation_id>/messages")
@@ -588,23 +730,22 @@ def create_app(
                 {"parameter": "sender", "in": "body"},
             )
 
+        user_message = UserMessage(message, None, conversation_id, parse_data)
+
         try:
-            user_message = UserMessage(message, None, conversation_id, parse_data)
-            tracker = await app.agent.log_message(user_message)
+            async with app.agent.lock_store.lock(conversation_id):
+                tracker = await app.agent.log_message(user_message)
             return response.json(tracker.current_state(verbosity))
         except Exception as e:
             logger.debug(traceback.format_exc())
             raise ErrorResponse(
-                500,
-                "ConversationError",
-                "An unexpected error occurred. Error: {}".format(e),
+                500, "ConversationError", f"An unexpected error occurred. Error: {e}"
             )
 
     @app.post("/model/train")
     @requires_auth(app, auth_token)
-    async def train(request: Request):
+    async def train(request: Request) -> HTTPResponse:
         """Train a Rasa Model."""
-        from rasa.train import train_async
 
         validate_request_body(
             request,
@@ -620,28 +761,52 @@ def create_app(
         temp_dir = tempfile.mkdtemp()
 
         config_path = os.path.join(temp_dir, "config.yml")
-        dump_obj_as_str_to_file(config_path, rjs["config"])
+
+        rasa.utils.io.write_text_file(rjs["config"], config_path)
 
         if "nlu" in rjs:
             nlu_path = os.path.join(temp_dir, "nlu.md")
-            dump_obj_as_str_to_file(nlu_path, rjs["nlu"])
+            rasa.utils.io.write_text_file(rjs["nlu"], nlu_path)
 
         if "stories" in rjs:
             stories_path = os.path.join(temp_dir, "stories.md")
-            dump_obj_as_str_to_file(stories_path, rjs["stories"])
+            rasa.utils.io.write_text_file(rjs["stories"], stories_path)
+
+        if "responses" in rjs:
+            responses_path = os.path.join(temp_dir, "responses.md")
+            rasa.utils.io.write_text_file(rjs["responses"], responses_path)
 
         domain_path = DEFAULT_DOMAIN_PATH
         if "domain" in rjs:
             domain_path = os.path.join(temp_dir, "domain.yml")
-            dump_obj_as_str_to_file(domain_path, rjs["domain"])
+            rasa.utils.io.write_text_file(rjs["domain"], domain_path)
+
+        if rjs.get("save_to_default_model_directory", True) is True:
+            model_output_directory = DEFAULT_MODELS_PATH
+        else:
+            model_output_directory = tempfile.gettempdir()
 
         try:
-            model_path = await train_async(
+            with app.active_training_processes.get_lock():
+                app.active_training_processes.value += 1
+
+            info = dict(
                 domain=domain_path,
                 config=config_path,
                 training_files=temp_dir,
-                output_path=rjs.get("out", DEFAULT_MODELS_PATH),
+                output=model_output_directory,
                 force_training=rjs.get("force", False),
+            )
+
+            loop = asyncio.get_event_loop()
+
+            from rasa import train as train_model
+
+            # Declare `model_path` upfront to avoid pytype `name-error`
+            model_path: Optional[Text] = None
+            # pass `None` to run in default executor
+            model_path = await loop.run_in_executor(
+                None, functools.partial(train_model, **info)
             )
 
             filename = os.path.basename(model_path) if model_path else None
@@ -653,15 +818,18 @@ def create_app(
             raise ErrorResponse(
                 400,
                 "InvalidDomainError",
-                "Provided domain file is invalid. Error: {}".format(e),
+                f"Provided domain file is invalid. Error: {e}",
             )
         except Exception as e:
             logger.debug(traceback.format_exc())
             raise ErrorResponse(
                 500,
                 "TrainingError",
-                "An unexpected error occurred during training. Error: {}".format(e),
+                f"An unexpected error occurred during training. Error: {e}",
             )
+        finally:
+            with app.active_training_processes.get_lock():
+                app.active_training_processes.value -= 1
 
     def validate_request(rjs):
         if "config" not in rjs:
@@ -692,7 +860,7 @@ def create_app(
 
     @app.post("/model/test/stories")
     @requires_auth(app, auth_token)
-    @ensure_loaded_agent(app)
+    @ensure_loaded_agent(app, require_core_is_ready=True)
     async def evaluate_stories(request: Request):
         """Evaluate stories against the currently loaded model."""
         validate_request_body(
@@ -712,7 +880,7 @@ def create_app(
             raise ErrorResponse(
                 500,
                 "TestingError",
-                "An unexpected error occurred during evaluation. Error: {}".format(e),
+                f"An unexpected error occurred during evaluation. Error: {e}",
             )
 
     @app.post("/model/test/intents")
@@ -743,7 +911,7 @@ def create_app(
             raise ErrorResponse(409, "Conflict", "Loaded model file not found.")
 
         model_directory = eval_agent.model_directory
-        _, nlu_model = get_model_subdirectories(model_directory)
+        _, nlu_model = model.get_model_subdirectories(model_directory)
 
         try:
             evaluation = run_evaluation(data_path, nlu_model)
@@ -753,12 +921,12 @@ def create_app(
             raise ErrorResponse(
                 500,
                 "TestingError",
-                "An unexpected error occurred during evaluation. Error: {}".format(e),
+                f"An unexpected error occurred during evaluation. Error: {e}",
             )
 
     @app.post("/model/predict")
     @requires_auth(app, auth_token)
-    @ensure_loaded_agent(app)
+    @ensure_loaded_agent(app, require_core_is_ready=True)
     async def tracker_predict(request: Request):
         """ Given a list of events, predicts the next action"""
         validate_request_body(
@@ -770,7 +938,6 @@ def create_app(
         sender_id = UserMessage.DEFAULT_SENDER_ID
         verbosity = event_verbosity_parameter(request, EventVerbosity.AFTER_RESTART)
         request_params = request.json
-
         try:
             tracker = DialogueStateTracker.from_dict(
                 sender_id, request_params, app.agent.domain.slots
@@ -780,7 +947,7 @@ def create_app(
             raise ErrorResponse(
                 400,
                 "BadRequest",
-                "Supplied events are not valid. {}".format(e),
+                f"Supplied events are not valid. {e}",
                 {"parameter": "", "in": "body"},
             )
 
@@ -805,9 +972,7 @@ def create_app(
         except Exception as e:
             logger.debug(traceback.format_exc())
             raise ErrorResponse(
-                500,
-                "PredictionError",
-                "An unexpected error occurred. Error: {}".format(e),
+                500, "PredictionError", f"An unexpected error occurred. Error: {e}"
             )
 
     @app.post("/model/parse")
@@ -829,14 +994,14 @@ def create_app(
                     data.get("text")
                 )
             except Exception as e:
-                logger.debug(traceback.format_exc())
+                print(traceback.format_exc())
                 raise ErrorResponse(
                     400,
                     "ParsingError",
                     "An unexpected error occurred. Error: {}".format(e),
                 )
             response_data = emulator.normalise_response_json(parsed_data)
-            logger.debug(response_data)
+            print(response_data)
             if response_data['intent']['confidence'] >= 0.70:
                 narrowedEntity = entitySerializer(response_data['entities'])
                 entMap = entityMapper(narrowedEntity, response_data['intent']['name'], response_data['text'])
@@ -880,7 +1045,7 @@ def create_app(
             return response.json(response_data)
 
         except Exception as e:
-            logger.debug(traceback.format_exc())
+            print(traceback.format_exc())
             raise ErrorResponse(
                 500, "ParsingError", "An unexpected error occurred. Error: {}".format(e)
             )
@@ -921,18 +1086,18 @@ def create_app(
         return entityArray
 
     def entityMapper(entMap, intent, utterence):
-        logger.debug(entMap, intent, utterence)
+        print(entMap, intent, utterence)
         intent = intent.lower()
         conditionMap = {}
         entityMap = {}
         entityArray = []
         count = 0
-        logger.debug(entMap, intent, utterence)
+        print(entMap, intent, utterence)
         newMap = {}
         for data in entMap:
             newMap[data['name']] = data['value']
         if newMap.__contains__("WORK_OF_ART") and newMap.__contains__("subject"):
-            logger.debug("into special condition")
+            print("into special condition")
             newMap.__delitem__("WORK_OF_ART")
             entMap = []
             resMap = {}
@@ -945,7 +1110,7 @@ def create_app(
             contentMap = {}
             for data in entMap:
                 contentMap[data['name']] = data['value']
-            logger.debug("entity map value is ", entMap)
+            print("entity map value is ", entMap)
             for data in entMap:
                 if data["name"] == "WORK_OF_ART":
                     data["name"] = "stitle"
@@ -961,9 +1126,9 @@ def create_app(
                                 data["name"] = "sseries"
                             entityArray.append(data)
                             conditionMap["stitle"] = data["value"]
-                    logger.debug("Entity array after work of art is ", entityArray)
+                    print("Entity array after work of art is ", entityArray)
                 elif data["name"] == "person":
-                    logger.debug(data)
+                    print(data)
                     if "stitle" in conditionMap:
                         if data["value"] != conditionMap["stitle"]:
                             data["name"] = "sauthor"
@@ -1000,15 +1165,15 @@ def create_app(
                                 entityArray.append(data)
                                 conditionMap["subject"] = data["value"]
                     else:
-                        logger.debug(entityArray)
+                        print(entityArray)
                         entityArray.pop(0)
                         conditionMap["stitle"] = data["value"].lower()
                         data["value"] = data["value"].lower()
                         data["name"] = "stitle"
                         entityArray.append(data)
-                        logger.debug(entityArray)
+                        print(entityArray)
                 elif data["name"] == "subject":
-                    logger.debug("Entity array before subject is ", entityArray)
+                    print("Entity array before subject is ", entityArray)
                     if "subject" not in conditionMap:
                         data["name"] = data["name"].lower()
                         entityArray.append(data)
@@ -1064,7 +1229,7 @@ def create_app(
                     if data["value"] != "":
                         entityArray.append(data)
                         conditionMap["sseries"] = data["value"]
-                        logger.debug("Entity array after work of art is ", entityArray)
+                        print("Entity array after work of art is ", entityArray)
                 elif data["name"] == "person":
                     if "sseries" in conditionMap:
                         if data["value"] != conditionMap["sseries"]:
@@ -1090,7 +1255,7 @@ def create_app(
                         entityArray.append(data)
                         conditionMap["sseries"] = data["value"]
                 elif data["name"] == "subject":
-                    logger.debug("Entity array before subject is ", entityArray)
+                    print("Entity array before subject is ", entityArray)
                     if "subject" not in conditionMap:
                         data["name"] = data["name"].lower()
                         entityArray.append(data)
@@ -1148,7 +1313,7 @@ def create_app(
                             else:
                                 entityArray.append(data)
                                 conditionMap["stitle"] = data["value"]
-                        logger.debug("Entity array after work of art is ", entityArray)
+                        print("Entity array after work of art is ", entityArray)
                     elif data["name"] == "person":
                         if "stitle" in conditionMap:
                             if data["value"] != conditionMap["stitle"]:
@@ -1175,15 +1340,15 @@ def create_app(
                                     entityArray.append(data)
                                     conditionMap["subject"] = data["value"]
                         else:
-                            logger.debug(entityArray)
+                            print(entityArray)
                             entityArray.pop(0)
                             conditionMap["stitle"] = data["value"].lower()
                             data["value"] = data["value"].lower()
                             data["name"] = "stitle"
                             entityArray.append(data)
-                            logger.debug(entityArray)
+                            print(entityArray)
                     elif data["name"] == "subject":
-                        logger.debug("Entity array before subject is ", entityArray)
+                        print("Entity array before subject is ", entityArray)
                         if "subject" not in conditionMap:
                             data["name"] = data["name"].lower()
                             entityArray.append(data)
@@ -1208,7 +1373,7 @@ def create_app(
                             else:
                                 entityArray.append(data)
                                 conditionMap["stitle"] = data["value"]
-                        logger.debug("Entity array after work of art is ", entityArray)
+                        print("Entity array after work of art is ", entityArray)
                     elif data["name"] == "person":
                         if "stitle" in conditionMap:
                             if data["value"] != conditionMap["stitle"]:
@@ -1235,15 +1400,15 @@ def create_app(
                                     entityArray.append(data)
                                     conditionMap["subject"] = data["value"]
                         else:
-                            logger.debug(entityArray)
+                            print(entityArray)
                             entityArray.pop(0)
                             conditionMap["stitle"] = data["value"].lower()
                             data["value"] = data["value"].lower()
                             data["name"] = "stitle"
                             entityArray.append(data)
-                            logger.debug(entityArray)
+                            print(entityArray)
                     elif data["name"] == "subject":
-                        logger.debug("Entity array before subject is ", entityArray)
+                        print("Entity array before subject is ", entityArray)
                         if "subject" not in conditionMap:
                             data["name"] = data["name"].lower()
                             entityArray.append(data)
@@ -1268,7 +1433,7 @@ def create_app(
                             else:
                                 entityArray.append(data)
                                 conditionMap["stitle"] = data["value"]
-                        logger.debug("Entity array after work of art is ", entityArray)
+                        print("Entity array after work of art is ", entityArray)
                     elif data["name"] == "person":
                         if "stitle" in conditionMap:
                             if data["value"] != conditionMap["stitle"]:
@@ -1295,15 +1460,15 @@ def create_app(
                                     entityArray.append(data)
                                     conditionMap["subject"] = data["value"]
                         else:
-                            logger.debug(entityArray)
+                            print(entityArray)
                             entityArray.pop(0)
                             conditionMap["stitle"] = data["value"].lower()
                             data["value"] = data["value"].lower()
                             data["name"] = "stitle"
                             entityArray.append(data)
-                            logger.debug(entityArray)
+                            print(entityArray)
                     elif data["name"] == "subject":
-                        logger.debug("Entity array before subject is ", entityArray)
+                        print("Entity array before subject is ", entityArray)
                         if "subject" not in conditionMap:
                             data["name"] = data["name"].lower()
                             entityArray.append(data)
@@ -1375,8 +1540,8 @@ def create_app(
                     else:
                         tempMap = {}
                         date = data["value"].split("T")
-                        logger.debug(type(data["value"]))
-                        logger.debug(date)
+                        print(type(data["value"]))
+                        print(date)
                         data["name"] = 'hdate'
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next"):
@@ -1478,7 +1643,7 @@ def create_app(
                     entityArray.append(data)
                 elif data["name"] == "time":
                     if 'from' in data['value']:
-                        logger.debug("*********************************************************")
+                        print("*********************************************************")
                         data['value'] = data['value'].replace("\'", "\"", -1)
                         datamap = json.loads(data['value'])
                         tempMap = {}
@@ -1503,8 +1668,8 @@ def create_app(
                         entityArray.append(tempMap)
                     else:
                         date = data["value"].split("T")
-                        logger.debug(type(data["value"]))
-                        logger.debug(date)
+                        print(type(data["value"]))
+                        print(date)
                         data["name"] = 'hdate'
                         tempMap = {}
                         if 'timeline' in contentMap and (
@@ -1570,7 +1735,7 @@ def create_app(
                         else:
                             entityArray.append(data)
                             conditionMap["stitle"] = data["value"]
-                    logger.debug("Entity array after work of art is ", entityArray)
+                    print("Entity array after work of art is ", entityArray)
                 elif data["name"] == "person":
                     if "stitle" in conditionMap:
                         if data["value"] != conditionMap["stitle"]:
@@ -1597,16 +1762,16 @@ def create_app(
                                 entityArray.append(data)
                                 conditionMap["subject"] = data["value"]
                     else:
-                        logger.debug(entityArray)
+                        print(entityArray)
                         entityArray.pop(0)
                         conditionMap["stitle"] = data["value"].lower()
                         data["value"] = data["value"].lower()
                         data["name"] = "stitle"
                         entityArray.append(data)
-                        logger.debug(entityArray)
+                        print(entityArray)
                 elif data["name"] == "time":
                     if 'from' in data['value']:
-                        logger.debug("*********************************************************")
+                        print("*********************************************************")
                         data['value'] = data['value'].replace("\'", "\"", -1)
                         datamap = json.loads(data['value'])
                         tempMap = {}
@@ -1621,8 +1786,8 @@ def create_app(
                         entityArray.append(tempMap)
                     else:
                         date = data["value"].split("T")
-                        logger.debug(type(data["value"]))
-                        logger.debug(date)
+                        print(type(data["value"]))
+                        print(date)
                         data["name"] = 'hdate'
                         data["value"] = date[0]
                         if 'currently' in conditionMap:
@@ -1644,7 +1809,7 @@ def create_app(
         else:
             for data in entMap:
                 entityArray.append(data)
-        logger.debug(entityArray)
+        print(entityArray)
         return entityArray
 
     def entitySerializer(enityData):
@@ -1684,6 +1849,7 @@ def create_app(
         model_path = request.json.get("model_file", None)
         model_server = request.json.get("model_server", None)
         remote_storage = request.json.get("remote_storage", None)
+
         if model_server:
             try:
                 model_server = EndpointConfig.from_dict(model_server)
@@ -1692,14 +1858,15 @@ def create_app(
                 raise ErrorResponse(
                     400,
                     "BadRequest",
-                    "Supplied 'model_server' is not valid. Error: {}".format(e),
+                    f"Supplied 'model_server' is not valid. Error: {e}",
                     {"parameter": "model_server", "in": "body"},
                 )
+
         app.agent = await _load_agent(
-            model_path, model_server, remote_storage, endpoints
+            model_path, model_server, remote_storage, endpoints, app.agent.lock_store
         )
 
-        logger.debug("Successfully loaded model '{}'.".format(model_path))
+        logger.debug(f"Successfully loaded model '{model_path}'.")
         return response.json(None, status=204)
 
     @app.delete("/model")
@@ -1707,9 +1874,9 @@ def create_app(
     async def unload_model(request: Request):
         model_file = app.agent.model_directory
 
-        app.agent = Agent()
+        app.agent = Agent(lock_store=app.agent.lock_store)
 
-        logger.debug("Successfully unload model '{}'.".format(model_file))
+        logger.debug(f"Successfully unloaded model '{model_file}'.")
         return response.json(None, status=204)
 
     @app.get("/domain")
@@ -1743,21 +1910,23 @@ def create_app(
 
 
 def _get_output_channel(
-        request: Request, tracker: Optional[DialogueStateTracker]
+    request: Request, tracker: Optional[DialogueStateTracker]
 ) -> OutputChannel:
     """Returns the `OutputChannel` which should be used for the bot's responses.
+
     Args:
         request: HTTP request whose query parameters can specify which `OutputChannel`
                  should be used.
         tracker: Tracker for the conversation. Used to get the latest input channel.
+
     Returns:
         `OutputChannel` which should be used to return the bot's responses to.
     """
     requested_output_channel = request.args.get(OUTPUT_CHANNEL_QUERY_KEY)
 
     if (
-            requested_output_channel == USE_LATEST_INPUT_CHANNEL_AS_OUTPUT_CHANNEL
-            and tracker
+        requested_output_channel == USE_LATEST_INPUT_CHANNEL_AS_OUTPUT_CHANNEL
+        and tracker
     ):
         requested_output_channel = tracker.get_latest_input_channel()
 
@@ -1773,47 +1942,7 @@ def _get_output_channel(
     # otherwise use `CollectingOutputChannel`
     return reduce(
         lambda output_channel_created_so_far, input_channel: (
-                input_channel.get_output_channel() or output_channel_created_so_far
-        ),
-        matching_channels,
-        CollectingOutputChannel(),
-    )
-
-    return app
-
-
-def _get_output_channel(
-        request: Request, tracker: Optional[DialogueStateTracker]
-) -> OutputChannel:
-    """Returns the `OutputChannel` which should be used for the bot's responses.
-    Args:
-        request: HTTP request whose query parameters can specify which `OutputChannel`
-                 should be used.
-        tracker: Tracker for the conversation. Used to get the latest input channel.
-    Returns:
-        `OutputChannel` which should be used to return the bot's responses to.
-    """
-    requested_output_channel = request.args.get(OUTPUT_CHANNEL_QUERY_KEY)
-
-    if (
-            requested_output_channel == USE_LATEST_INPUT_CHANNEL_AS_OUTPUT_CHANNEL
-            and tracker
-    ):
-        requested_output_channel = tracker.get_latest_input_channel()
-
-    # Interactive training does not set `input_channels`, hence we have to be cautious
-    registered_input_channels = getattr(request.app, "input_channels", None) or []
-    matching_channels = [
-        channel
-        for channel in registered_input_channels
-        if channel.name() == requested_output_channel
-    ]
-
-    # Check if matching channels can provide a valid output channel,
-    # otherwise use `CollectingOutputChannel`
-    return reduce(
-        lambda output_channel_created_so_far, input_channel: (
-                input_channel.get_output_channel() or output_channel_created_so_far
+            input_channel.get_output_channel() or output_channel_created_so_far
         ),
         matching_channels,
         CollectingOutputChannel(),
