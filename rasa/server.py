@@ -1489,6 +1489,7 @@ def create_app(
                         entityArray.append(tempMap)
                     else:
                         date = data["value"].split("T")
+                        tempMap = {}
                         print(type(data["value"]))
                         print(date)
                         data["name"] = 'hdate'
