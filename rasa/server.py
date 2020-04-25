@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import re, datetime
+from datetime import date
 import traceback
 from functools import wraps, reduce
 from inspect import isawaitable
@@ -921,7 +922,8 @@ def create_app(
         return entityArray
 
     def entityMapper(entMap, intent, utterence):
-        print(entMap, intent, utterence)
+        date = datetime.date.today()
+        print(entMap, intent, utterence, date)
         intent = intent.lower()
         conditionMap = {}
         entityMap = {}
@@ -1358,7 +1360,7 @@ def create_app(
                         fromDate = datamap['from'].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
-                                "weekend" in contentMap or 'filter' in contentMap):
+                                "weekend" in contentMap or 'filter' in contentMap) and date.today().weekday() == 0:
                             tempMap['value'] = datetime.datetime.strptime(fromDate[0], '%Y-%m-%d').date()
                             tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
@@ -1369,7 +1371,7 @@ def create_app(
                         todate = datamap['to'].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
-                                "weekend" in contentMap or 'filter' in contentMap):
+                                "weekend" in contentMap or 'filter' in contentMap) and date.today().weekday() == 0:
                             tempMap['value'] = datetime.datetime.strptime(todate[0], '%Y-%m-%d').date()
                             tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
@@ -1382,12 +1384,12 @@ def create_app(
                         data["name"] = 'hdate'
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
-                                "weekend" in contentMap or 'filter' in contentMap):
+                                "weekend" in contentMap or 'filter' in contentMap) and date.today().weekday() == 0:
                             tempMap['value'] = datetime.datetime.strptime(date[0], '%Y-%m-%d').date()
                             tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
                             tempMap['value'] = date[0]
-                        if 'currently' in condMap:
+                        if 'currently' in contentMap:
                             pass
                         else:
                             entityArray.append(data)
@@ -1478,7 +1480,9 @@ def create_app(
                         tempMap = {}
                         tempMap['name'] = 'from'
                         fromDate = datamap['from'].split("T")
-                        if 'timeline' in contentMap and (contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and ("weekend" in contentMap or 'filter' in contentMap):
+                        if 'timeline' in contentMap and (
+                                contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
+                                "weekend" in contentMap or 'filter' in contentMap) and date.today().weekday() == 0:
                             tempMap['value'] = datetime.datetime.strptime(fromDate[0], '%Y-%m-%d').date()
                             tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
@@ -1487,7 +1491,9 @@ def create_app(
                         tempMap = {}
                         tempMap['name'] = 'to'
                         todate = datamap['to'].split("T")
-                        if 'timeline' in contentMap and (contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and ("weekend" in contentMap or 'filter' in contentMap):
+                        if 'timeline' in contentMap and (
+                                contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
+                                "weekend" in contentMap or 'filter' in contentMap) and date.today().weekday() == 0:
                             tempMap['value'] = datetime.datetime.strptime(todate[0], '%Y-%m-%d').date()
                             tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
@@ -1499,7 +1505,9 @@ def create_app(
                         print(type(data["value"]))
                         print(date)
                         data["name"] = 'hdate'
-                        if 'timeline' in contentMap and (contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and ("weekend" in contentMap or 'filter' in contentMap):
+                        if 'timeline' in contentMap and (
+                                contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
+                                "weekend" in contentMap or 'filter' in contentMap) and date.today().weekday() == 0:
                             tempMap['value'] = datetime.datetime.strptime(date[0], '%Y-%m-%d').date()
                             tempMap['value'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
