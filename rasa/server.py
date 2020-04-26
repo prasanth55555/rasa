@@ -1351,6 +1351,7 @@ def create_app(
                         data["value"] = data["value"].replace(" in", "", -1).replace(" at", "", -1)
                         entityArray.append(data)
                 elif data["name"] == "time":
+                    tempMap = {}
                     if 'from' in data['value']:
                         print("*********************************************************")
                         data['value'] = data['value'].replace("\'", "\"", -1)
@@ -1473,6 +1474,7 @@ def create_app(
                     condMap['currently'] = 'now'
                     entityArray.append(data)
                 elif data["name"] == "time":
+                    tempMap = {}
                     if 'from' in data['value']:
                         print("*********************************************************")
                         data['value'] = data['value'].replace("\'", "\"", -1)
@@ -1604,6 +1606,7 @@ def create_app(
                         entityArray.append(data)
                         print(entityArray)
                 elif data["name"] == "time":
+                    tempMap = {}
                     if 'from' in data['value']:
                         print("*********************************************************")
                         data['value'] = data['value'].replace("\'", "\"", -1)
