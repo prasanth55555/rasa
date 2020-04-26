@@ -1420,11 +1420,11 @@ def create_app(
                             conditionMap['searchQuery'] = True
                     else:
                         pass
-                elif data["name"] == "language" or data["name"] == "library" or data["name"] == "category":
+                elif data["name"] == "language" or data["name"] == "category":
                     entityArray.append(data)
                 elif data["name"] == "audience":
                     entityArray.append(data)
-                if 'week end' in utterence or 'weekend' in utterence:
+                elif data["name"] == "weekend":
                     if 'weekend' not in conditionMap:
                         data['name'] = 'weekend'
                         data['value'] = 'weekend'
@@ -1537,12 +1537,12 @@ def create_app(
                         data['name'] = 'libinfofilter'
                         data['value'] = 'details'
                     entityArray.append(data)
-            if 'week end' in utterence or 'weekend' in utterence:
-                if 'weekend' not in conditionMap:
-                    data['name'] = 'weekend'
-                    data['value'] = 'weekend'
-                    entityArray.append(data)
-                    conditionMap['weekend'] = 'weekend'
+                elif data["name"] == "weekend":
+                    if 'weekend' not in conditionMap:
+                        data['name'] = 'weekend'
+                        data['value'] = 'weekend'
+                        entityArray.append(data)
+                        conditionMap['weekend'] = 'weekend'
         elif intent == "listintransitintent":
             data = {}
             data['name'] = 'inTransit'
