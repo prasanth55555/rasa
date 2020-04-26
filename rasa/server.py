@@ -1318,6 +1318,7 @@ def create_app(
                     pass
         elif intent == "eventintent":
             contentMap = {}
+            condMap = {}
             for data in entMap:
                 contentMap[data['name']] = data['value']
             for data in entMap:
@@ -1400,8 +1401,9 @@ def create_app(
                 elif data["name"] == "edate":
                     if "edate" not in conditionMap:
                         entityArray.append(data)
-                elif data["name"] == "ORG" or data["name"] == "libname":
+                elif data["name"] == "ORG" or data["name"] == "libname" and "library" not in condMap:
                     data["name"] = "library"
+                    condMap["library"] = data["value"]
                     entityArray.append(data)
                 elif data["name"] == "lang":
                     data["name"] = "language"
