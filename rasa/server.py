@@ -1382,7 +1382,7 @@ def create_app(
                         date = data["value"].split("T")
                         print(type(data["value"]))
                         print(date)
-                        data["name"] = 'hdate'
+                        data["name"] = 'edate'
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
                                 "weekend" in contentMap or 'filter' in contentMap) and date.today().weekday() == 0:
@@ -1394,7 +1394,7 @@ def create_app(
                             pass
                         else:
                             entityArray.append(data)
-                    conditionMap["hdate"] = data["value"]
+                    conditionMap["edate"] = data["value"]
                 elif data["name"].lower() == 'date':
                     data["name"] = 'date'
                 elif data["name"] == "edate":
