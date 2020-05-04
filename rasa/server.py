@@ -1056,9 +1056,15 @@ def create_app(
                 else:
                     pass
         elif intent == "seriesintent":
+            contentMap = {}
+            for data in entMap:
+                contentMap[data['name']] = data['value']
             for data in entMap:
                 if data["name"] == "WORK_OF_ART":
-                    data["name"] = "sseries"
+                    if "seriesFilter" in contentMap:
+                        data["name"] = "sseries"
+                    else:
+                        date["name"] = "stitle"
                     data["value"] = data["value"].lower().replace("search for a book", "").replace(
                         "search for the book", "").replace("serach for title", "").replace("search for a title",
                                                                                            "").replace(
@@ -1077,18 +1083,27 @@ def create_app(
                         entityArray.append(data)
                 elif data["name"] == "series":
                     if "sseries" not in conditionMap:
-                        data["name"] = "sseries"
+                        if "seriesFilter" in contentMap:
+                            data["name"] = "sseries"
+                        else:
+                            date["name"] = "stitle"
                         entityArray.append(data)
                         conditionMap["sseries"] = data["value"]
                     else:
                         entityArray.pop(0)
                         conditionMap["sseries"] = data["value"].lower()
                         data["value"] = data["value"].lower()
-                        data["name"] = "sseries"
+                        if "seriesFilter" in contentMap:
+                            data["name"] = "sseries"
+                        else:
+                            date["name"] = "stitle"
                         entityArray.append(data)
                 elif data["name"] == "sbook" or data["name"] == "sBook":
                     if "sseries" not in conditionMap:
-                        data["name"] = "sseries"
+                        if "seriesFilter" in contentMap:
+                            data["name"] = "sseries"
+                        else:
+                            date["name"] = "stitle"
                         entityArray.append(data)
                         conditionMap["sseries"] = data["value"]
                 elif data["name"] == "subject":
