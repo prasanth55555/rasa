@@ -1081,6 +1081,9 @@ def create_app(
                     else:
                         data["name"] = "sauthor"
                         entityArray.append(data)
+                elif data["name"] == "language":
+                    data["name"] = 'lang'
+                    entityArray.append(data)
                 elif data["name"] == "series":
                     if "sseries" not in conditionMap:
                         if "seriesFilter" in contentMap:
@@ -1567,6 +1570,11 @@ def create_app(
             for data in entMap:
                 if data['name'] == 'person':
                     data['name'] = 'patronname'
+                    entityArray.append(data)
+        elif intent == "librarynameintent":
+            for data in entMap:
+                if data['name'] == 'library':
+                    data['name'] = 'libname'
                     entityArray.append(data)
         elif intent == "updateholdintent":
             conditionMap = {}
