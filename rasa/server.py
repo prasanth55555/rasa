@@ -1064,7 +1064,7 @@ def create_app(
                     if "seriesFilter" in contentMap:
                         data["name"] = "sseries"
                     else:
-                        date["name"] = "stitle"
+                        data["name"] = "stitle"
                     data["value"] = data["value"].lower().replace("search for a book", "").replace(
                         "search for the book", "").replace("serach for title", "").replace("search for a title",
                                                                                            "").replace(
@@ -1086,7 +1086,7 @@ def create_app(
                         if "seriesFilter" in contentMap:
                             data["name"] = "sseries"
                         else:
-                            date["name"] = "stitle"
+                            data["name"] = "stitle"
                         entityArray.append(data)
                         conditionMap["sseries"] = data["value"]
                     else:
@@ -1096,14 +1096,14 @@ def create_app(
                         if "seriesFilter" in contentMap:
                             data["name"] = "sseries"
                         else:
-                            date["name"] = "stitle"
+                            data["name"] = "stitle"
                         entityArray.append(data)
                 elif data["name"] == "sbook" or data["name"] == "sBook":
                     if "sseries" not in conditionMap:
                         if "seriesFilter" in contentMap:
                             data["name"] = "sseries"
                         else:
-                            date["name"] = "stitle"
+                            data["name"] = "stitle"
                         entityArray.append(data)
                         conditionMap["sseries"] = data["value"]
                 elif data["name"] == "subject":
