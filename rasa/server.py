@@ -3,12 +3,14 @@ import json
 import os
 import tempfile
 import re, datetime
-from datetime import date
+from datetime import date,datetime, timezone
 import traceback
 from functools import wraps, reduce
 from inspect import isawaitable
 from typing import Any, Callable, List, Optional, Text, Union
+import pytz
 
+from datetime import timedelta
 from sanic import Sanic, response
 from sanic.request import Request
 from sanic_cors import CORS
@@ -824,6 +826,7 @@ def create_app(
 
         try:
             data = emulator.normalise_request_json(request.json)
+            timeZone = data.get("timezone") if data.get("timezone") is not None else "Europe/Berlin"
             try:
                 data['text'] = re.sub('[^a-z0-9 ]+', '', data['text'].lower())
                 parsed_data = await app.agent.parse_message_using_nlu_interpreter(
@@ -839,8 +842,8 @@ def create_app(
             response_data = emulator.normalise_response_json(parsed_data)
             print(response_data)
             if response_data['intent']['confidence'] >= 0.70:
-                narrowedEntity = entitySerializer(response_data['entities'])
-                entMap = entityMapper(narrowedEntity, response_data['intent']['name'], response_data['text'])
+                narrowedEntity = entitySerializer(response_data['entities'], timeZone)
+                entMap = entityMapper(narrowedEntity, response_data['intent']['name'], response_data['text'], timeZone)
                 response_data['slotvalues'] = entMap
                 response_data['didYouMean'] = False
                 response_data['intent'] = response_data['intent']['name'] if response_data['intent'][
@@ -921,7 +924,7 @@ def create_app(
                 entityArray.append(data)
         return entityArray
 
-    def entityMapper(entMap, intent, utterence):
+    def entityMapper(entMap, intent, utterence, timezone):
         today = datetime.date.today()
         print(entMap, intent, utterence, today)
         intent = intent.lower()
@@ -1339,6 +1342,18 @@ def create_app(
             condMap = {}
             for data in entMap:
                 contentMap[data['name']] = data['value']
+            if 'day' in contentMap:
+                data = {}
+                tz = pytz.timezone(timezone)
+                if contentMap['day'] == "tomorrow":
+                    tz = datetime.now(tz) + timedelta(days=1)
+                else:
+                    tz = datetime.now(tz)
+                timeNow = str(tz).split(' ')[0]
+                data['name'] = 'edate'
+                data['value'] = timeNow
+                condMap['edate'] = timeNow
+                entityArray.append(data)
             for data in entMap:
                 if data["name"] == "person":
                     if "present" in utterence and "organize" in utterence:
@@ -1369,7 +1384,7 @@ def create_app(
                         data["name"] = "organizer"
                         data["value"] = data["value"].replace(" in", "", -1).replace(" at", "", -1)
                         entityArray.append(data)
-                elif data["name"] == "time":
+                elif data["name"] == "time" and 'edate' not in condMap:
                     tempMap = {}
                     if 'from' in data['value']:
                         print("*********************************************************")
@@ -1414,10 +1429,8 @@ def create_app(
                         else:
                             entityArray.append(data)
                     conditionMap["edate"] = data["value"]
-                elif data["name"].lower() == 'date':
-                    data["name"] = 'date'
                 elif data["name"] == "edate":
-                    if "edate" not in conditionMap:
+                    if "edate" not in condMap:
                         entityArray.append(data)
                 elif data["name"] == "ORG" or data["name"] == "libname" and "library" not in condMap:
                     data["name"] = "library"
@@ -1482,6 +1495,18 @@ def create_app(
             for data in entMap:
                 contentMap[data['name']] = data['value']
             condMap = {}
+            if 'day' in contentMap:
+                data = {}
+                tz = pytz.timezone(timezone)
+                if contentMap['day'] == "tomorrow":
+                    tz = datetime.now(tz) + timedelta(days=1)
+                else:
+                    tz = datetime.now(tz)
+                timeNow = str(tz).split(' ')[0]
+                data['name'] = 'hdate'
+                data['value'] = timeNow
+                condMap['hdate'] = timeNow
+                entityArray.append(data)
             for data in entMap:
                 if data['name'] == 'libname':
                     entityArray.append(data)
@@ -1493,7 +1518,7 @@ def create_app(
                 elif data['name'] == 'currently':
                     condMap['currently'] = 'now'
                     entityArray.append(data)
-                elif data["name"] == "time":
+                elif data["name"] == "time" and 'hdate' not in condMap:
                     tempMap = {}
                     if 'from' in data['value']:
                         print("*********************************************************")
@@ -1539,10 +1564,8 @@ def create_app(
                         else:
                             entityArray.append(data)
                     conditionMap["hdate"] = data["value"]
-                elif data["name"].lower() == 'date':
-                    data["name"] = 'date'
                 elif data["name"] == "hdate":
-                    if "hdate" not in conditionMap:
+                    if "hdate" not in condMap:
                         entityArray.append(data)
                 elif data['name'] == 'address' or data['name'] == 'contact' or data['name'] == 'details':
                     if data['name'] == 'address':
@@ -1674,7 +1697,7 @@ def create_app(
         print(entityArray)
         return entityArray
 
-    def entitySerializer(enityData):
+    def entitySerializer(enityData, timezone):
         filterMap = []
         entityArray = []
         entityMap = {}
