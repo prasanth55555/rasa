@@ -952,14 +952,12 @@ def create_app(
                 contentMap[data['name']] = data['value']
             print("entity map value is ", entMap)
             for data in entMap:
-                if data["name"] == "WORK_OF_ART":
+                if data["name"] == "WORK_OF_ART" and 'sbook' not in contentMap:
                     data["name"] = "stitle"
-                    data["value"] = data["value"].lower().replace("search for a book", "").replace(
-                        "search for the book", "").replace("serach for title", "").replace("search for a title",
-                                                                                           "").replace(
-                        "serach for the title", "")
+                    data["value"] = data["value"].lower()
                     if data["value"] != "":
-                        if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'] == contentMap['filterphrase']:
+                        if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'].lower() == contentMap[
+                            'filterphrase']:
                             pass
                         else:
                             if "seriesFilter" in contentMap:
@@ -1016,6 +1014,7 @@ def create_app(
                     print("Entity array before subject is ", entityArray)
                     if "subject" not in conditionMap:
                         data["name"] = data["name"].lower()
+                        data["value"] = data["value"].replace("library", "")
                         entityArray.append(data)
                         conditionMap["subject"] = data["value"]
                 elif data["name"] == "filterphrase":
@@ -1064,18 +1063,18 @@ def create_app(
                 contentMap[data['name']] = data['value']
             for data in entMap:
                 if data["name"] == "WORK_OF_ART":
-                    if "seriesFilter" in contentMap:
-                        data["name"] = "sseries"
+                    if 'filterphrase' in contentMap and contentMap['WORK_OF_ART'].lower() == contentMap['filterphrase']:
+                        pass
                     else:
-                        data["name"] = "stitle"
-                    data["value"] = data["value"].lower().replace("search for a book", "").replace(
-                        "search for the book", "").replace("serach for title", "").replace("search for a title",
-                                                                                           "").replace(
-                        "serach for the title", "")
-                    if data["value"] != "":
-                        entityArray.append(data)
-                        conditionMap["sseries"] = data["value"]
-                        print("Entity array after work of art is ", entityArray)
+                        if "seriesFilter" in contentMap:
+                            data["name"] = "sseries"
+                        else:
+                            data["name"] = "stitle"
+                        data["value"] = data["value"].lower()
+                        if data["value"] != "":
+                            entityArray.append(data)
+                            conditionMap["sseries"] = data["value"]
+                            print("Entity array after work of art is ", entityArray)
                 elif data["name"] == "person":
                     if "sseries" in conditionMap:
                         if data["value"] != conditionMap["sseries"]:
@@ -1105,7 +1104,7 @@ def create_app(
                             data["name"] = "stitle"
                         entityArray.append(data)
                 elif data["name"] == "sbook" or data["name"] == "sBook":
-                    if "sseries" not in conditionMap:
+                    if "sseries" in conditionMap:
                         if "seriesFilter" in contentMap:
                             data["name"] = "sseries"
                         else:
@@ -1133,7 +1132,7 @@ def create_app(
                 elif data["name"] == "sauthor":
                     entityArray.append(data)
                 elif data["name"] == 'type' or data["name"] == 'timeline' or data["name"] == 'mtype' or data[
-                    "name"] == 'renew' or data["name"] == 'renewAll' or data["name"] == "cancelhold":
+                    "name"] == 'renew' or data["name"] == 'renewAll' or data["name"] == "cancelhold" or data['name'] == 'library' or data['name'] == 'reserve':
                     data["name"] = data["name"].lower()
                     entityArray.append(data)
                 elif data["name"] == "pubyear":
@@ -1212,6 +1211,9 @@ def create_app(
                             entityArray.append(data)
                             conditionMap["subject"] = data["value"]
         elif intent == "search_author":
+            contentMap = {}
+            for ele in entMap:
+                contentMap[ele["name"]] = ele["value"]
             customMap = {}
             customMap["name"] = "type"
             customMap["value"] = "author"
@@ -1232,6 +1234,10 @@ def create_app(
                                 entityArray.append(data)
                                 conditionMap["stitle"] = data["value"]
                         print("Entity array after work of art is ", entityArray)
+                    elif data["name"] == "PERSON":
+                        if "person" not in contentMap:
+                            data["name"] = "sauthor"
+                            entityArray.append(data)
                     elif data["name"] == "person":
                         if "stitle" in conditionMap:
                             if data["value"] != conditionMap["stitle"]:
@@ -1326,9 +1332,9 @@ def create_app(
                             entityArray.append(data)
                             print(entityArray)
                     elif data["name"] == "subject":
-                        print("Entity array before subject is ", entityArray)
                         if "subject" not in conditionMap:
                             data["name"] = data["name"].lower()
+                            data["value"] = data["value"].replace("library", "")
                             entityArray.append(data)
                             conditionMap["subject"] = data["value"]
         elif intent == "checkedoutintent":
@@ -1432,7 +1438,8 @@ def create_app(
                 elif data["name"] == "edate":
                     if "edate" not in condMap:
                         entityArray.append(data)
-                elif data["name"] == "ORG" or data["name"] == "libname" and "library" not in condMap:
+                elif data["name"] == "libname" and "library" not in condMap or data[
+                    "name"] == "library" and "library" not in condMap:
                     data["name"] = "library"
                     condMap["library"] = data["value"]
                     entityArray.append(data)
