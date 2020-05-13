@@ -840,10 +840,12 @@ def create_app(
                     "An unexpected error occurred. Error: {}".format(e),
                 )
             response_data = emulator.normalise_response_json(parsed_data)
-            print(response_data)
+            logger.info("[843] Data after Processing NLU =>",response_data)
             if response_data['intent']['confidence'] >= 0.70:
                 narrowedEntity = entitySerializer(response_data['entities'], timeZone)
+                logger.info("[846] Data after entity serializing ", narrowedEntity)
                 entMap = entityMapper(narrowedEntity, response_data['intent']['name'], response_data['text'], timeZone)
+                logger.info("[848] Data from entity mapper ", entMap)
                 response_data['slotvalues'] = entMap
                 response_data['didYouMean'] = False
                 response_data['intent'] = response_data['intent']['name'] if response_data['intent'][
@@ -950,7 +952,7 @@ def create_app(
             contentMap = {}
             for data in entMap:
                 contentMap[data['name']] = data['value']
-            print("entity map value is ", entMap)
+            logger.info("[955] data to search intent ", entMap)
             for data in entMap:
                 if data["name"] == "WORK_OF_ART" and 'sbook' not in contentMap:
                     data["name"] = "stitle"
