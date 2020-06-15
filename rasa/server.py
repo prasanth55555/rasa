@@ -3,7 +3,8 @@ import json
 import os
 import tempfile
 import re, datetime
-from datetime import date,datetime, timezone
+from datetime import datetime, timezone
+import datetime
 import traceback
 from functools import wraps, reduce
 from inspect import isawaitable
@@ -841,9 +842,9 @@ def create_app(
                     "An unexpected error occurred. Error: {}".format(e),
                 )
             response_data = emulator.normalise_response_json(parsed_data)
-            # response_data = {'intent': {'name': 'LibraryInfoIntent', 'confidence': 0.9581180810928345}, 'entities': [{'start': 16, 'end': 19, 'text': 'now', 'value': '2020-06-10T17:31:02.000+00:00', 'confidence': 1.0, 'additional_info': {'values': [{'value': '2020-06-10T17:31:02.000+00:00', 'grain': 'second', 'type': 'value'}], 'value': '2020-06-10T17:31:02.000+00:00', 'grain': 'second', 'type': 'value'}, 'entity': 'time', 'extractor': 'DucklingHTTPExtractor'}], 'intent_ranking': [{'name': 'LibraryInfoIntent', 'confidence': 0.9581180810928345}, {'name': 'MagicCodeIntent', 'confidence': 0.0984540656208992}, {'name': 'AMAZON.LaunchIntent', 'confidence': 0.0652654618024826}, {'name': 'AMAZON.CancelIntent', 'confidence': 0.06363551318645477}, {'name': 'ListHoldIntent', 'confidence': 0.05848044157028198}, {'name': 'ListPickUpIntent', 'confidence': 0.056083545088768005}, {'name': 'ReloadIntent', 'confidence': 0.0505867600440979}, {'name': 'AMAZON.HelpIntent', 'confidence': 0.048962414264678955}, {'name': 'AMAZON.YesIntent', 'confidence': 0.03990505635738373}, {'name': 'SeriesIntent', 'confidence': 0.03716365247964859}], 'text': 'is library open now'}
             logger.debug("Data after Processing NLU =>",response_data)
             if response_data['intent']['confidence'] >= 0.70:
+                print(response_data)
                 entMap = entityMapper(response_data['entities'], response_data['intent']['name'], response_data['text'], timeZone)
                 response_data['slotvalues'] = FormStruct(entMap)
                 response_data['didYouMean'] = False
@@ -1112,10 +1113,13 @@ def create_app(
 
     def FormStruct(resultMap):
         Array = list()
-        eachDoc = {}
+        if "sauthor" in resultMap and "stitle" in resultMap and resultMap["sauthor"] == resultMap["stitle"]:
+            del resultMap["sauthor"]
         for doc in resultMap:
-            eachDoc["name"] = doc
-            eachDoc["value"] = resultMap[doc]
+            if doc != "unDefined":
+                eachDoc = {}
+                eachDoc["name"] = doc
+                eachDoc["value"] = resultMap[doc]
             Array.append(eachDoc)
         return Array
 
