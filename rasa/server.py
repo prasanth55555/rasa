@@ -842,9 +842,8 @@ def create_app(
                     "An unexpected error occurred. Error: {}".format(e),
                 )
             response_data = emulator.normalise_response_json(parsed_data)
-            logger.debug("Data after Processing NLU =>",response_data)
+            print("Data after Processing NLU =>",response_data)
             if response_data['intent']['confidence'] >= 0.70:
-                print(response_data)
                 entMap = entityMapper(response_data['entities'], response_data['intent']['name'], response_data['text'], timeZone)
                 response_data['slotvalues'] = FormStruct(entMap)
                 response_data['didYouMean'] = False
@@ -926,6 +925,8 @@ def create_app(
         for data in entMap:
             contentMap[data['entity']] = data['value']
 
+        # intentMap = {"searchintent":True, "cancelholdintent":True,"renewintent":True,"listcheckOutintent":True,"listholdintent":True,"seriesintent":True,"search_title":True,"search_title":True,"search_author":True,"search_subject":True,"checkedoutintent":True,"reserve_searchintent":True}
+
         if intent == "searchintent" or intent == "cancelholdintent" or intent == "renewintent" or intent == "listcheckOutintent" or intent == "listholdintent" or intent == "seriesintent" or intent == "search_title" or intent == "search_author" or intent == "search_subject" or intent == "checkedoutintent" or intent == "reserve_searchintent":
             entityMapping = defaultdict(lambda: "unDefined",
                                         {"WORK_OF_ART": 'stitle', "sbook": 'stitle', "sBook": "stitle",
@@ -933,7 +934,7 @@ def create_app(
                                          "person": "sauthor", "filterphrase": "filterphrase",
                                          "mtype": "mtype", "language": "lang", "lang": "lang",
                                          "type": "type", "renew": "renew", "renewAll": "renewAll",
-                                         "pubyear": "pubyear", "PERSON": "sauthor", "checkedout": "checkedout"})
+                                         "pubyear": "pubyear", "PERSON": "sauthor", "checkedout": "checkedout","library":"library","reserve":"reserve"})
             if intent == "search_title":
                 resultMap['type'] = 'title'
             elif intent == "search_author":
@@ -941,17 +942,19 @@ def create_app(
             elif intent == "search_subject":
                 resultMap['type'] = 'subject'
             for data in entMap:
-                if 'series' in contentMap and entityMapping[data['entity']] == "stitle":
+                if 'seriesFilter' in contentMap and entityMapping[data['entity']] == "stitle":
                     resultMap["sseries"] = data['value']
                 else:
                     resultMap[entityMapping[data['entity']]] = data['value']
-        elif intent == "listpickupintent" or intent == "feeinfointent" or intent == "listintransitintent":
+        elif intent == "listpickupintent" or intent == "feeinfointent" or intent == "listintransitintent" or intent == "repeatintent":
             if intent == "listpickupintent":
                 resultMap['pickup'] = "pickup"
             elif intent == "feeinfointent":
                 resultMap["fee"] = "fee"
             elif intent == "listintransitintent":
                 resultMap["inTransit"] = "in transit"
+            elif intent == "repeatintent":
+                resultMap["repeat"] = "repeat"
         elif intent == "optionintent":
             entityMapping = defaultdict(lambda: "unDefined",
                                         {"ordinal": "option", "cardinal": "option", "number": "option"})
@@ -985,7 +988,7 @@ def create_app(
             entityMapping = defaultdict(lambda: "unDefined",
                                         {"library": "library", "libname": "library", "lang": "language",
                                          "category": "category", "weekend": "weekend", "audience": "audience",
-                                         "language": "language"})
+                                         "language": "language","location":"location"})
             if 'day' in contentMap:
                 tz = pytz.timezone(timezone)
                 if contentMap['day'] == "tomorrow":
@@ -994,7 +997,7 @@ def create_app(
                     tz = datetime.now(tz)
                 resultMap["edate"] = str(tz).split(' ')[0]
             for data in entMap:
-                if data["name"] == "person":
+                if data["entity"] == "person":
                     if "present" in utterence and "organize" in utterence:
                         orgsplit = utterence.split("organize")
                         presplit = utterence.split("present")
@@ -1014,12 +1017,11 @@ def create_app(
                         resultMap["presenter"] = data["value"]
                     elif "organize" in utterence:
                         resultMap["organizer"] = data["value"]
-                if data["name"] == "time":
+                if data["entity"] == "time":
                     tempMap = {}
                     if 'from' in data['value']:
                         data['value'] = data['value'].replace("\'", "\"", -1)
                         datamap = json.loads(data['value'])
-                        tempMap['name'] = 'from'
                         fromDate = datamap['from'].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
@@ -1028,7 +1030,6 @@ def create_app(
                             resultMap["from"] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
                             resultMap["from"] = fromDate[0]
-                        tempMap['name'] = 'to'
                         todate = datamap['to'].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
@@ -1046,7 +1047,7 @@ def create_app(
                             resultMap["to"] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
                             resultMap["to"] = date[0]
-                elif data["name"] == "subject" or data["name"] == "title" or data["name"] == "program":
+                elif data["entity"] == "subject" or data["entity"] == "title" or data["entity"] == "program":
                     if 'on' in utterence:
                         resultMap['program'] = data["value"]
                     else:
@@ -1067,14 +1068,13 @@ def create_app(
                     tz = datetime.now(tz)
                 resultMap["hdate"] = str(tz).split(' ')[0]
             for data in entMap:
-                if data['name'] == 'currently':
+                if data['entity'] == 'currently':
                     resultMap['currently'] = "now"
-                elif data["name"] == "time":
+                elif data["entity"] == "time":
                     tempMap = {}
                     if 'from' in data['value']:
                         data['value'] = data['value'].replace("\'", "\"", -1)
                         datamap = json.loads(data['value'])
-                        tempMap['name'] = 'from'
                         fromDate = datamap['from'].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
@@ -1083,7 +1083,6 @@ def create_app(
                             resultMap["from"] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
                             resultMap["from"] = fromDate[0]
-                        tempMap['name'] = 'to'
                         todate = datamap['to'].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
@@ -1101,11 +1100,11 @@ def create_app(
                             resultMap["to"] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
                             resultMap["to"] = date[0]
-                elif data['name'] == 'address':
+                elif data['entity'] == 'address':
                     resultMap["libinfofilter"] = "address"
-                elif data['name'] == 'contact':
+                elif data['entity'] == 'contact':
                     resultMap["libinfofilter"] = "contact"
-                elif data['name'] == 'details':
+                elif data['entity'] == 'details':
                     resultMap["libinfofilter"] = "details"
                 else:
                     resultMap[entityMapping[data['entity']]] = data['value']
@@ -1115,42 +1114,16 @@ def create_app(
         Array = list()
         if "sauthor" in resultMap and "stitle" in resultMap and resultMap["sauthor"] == resultMap["stitle"]:
             del resultMap["sauthor"]
+        if "stitle" in resultMap and "subject" in resultMap and resultMap["stitle"] == resultMap["subject"]:
+            del resultMap["stitle"]
         for doc in resultMap:
             if doc != "unDefined":
                 eachDoc = {}
                 eachDoc["name"] = doc
                 eachDoc["value"] = resultMap[doc]
-            Array.append(eachDoc)
+                Array.append(eachDoc)
         return Array
 
-    # def entitySerializer(enityData, timezone):
-    #     filterMap = []
-    #     entityArray = []
-    #     entityMap = {}
-    #     for data in enityData:
-    #         if data["entity"] == "PERSON":
-    #             entData = data["value"]
-    #             entArray = entData.split("||")
-    #             if len(entArray) > 1:
-    #                 for k in entArray:
-    #                     entityMap["value"] = k
-    #                     entityMap["name"] = "PERSON"
-    #                     entityArray.append(entityMap)
-    #                     entityMap = {}
-    #             else:
-    #                 entityMap["value"] = str(data["value"])
-    #                 entityMap["name"] = data["entity"]
-    #                 entityArray.append(entityMap)
-    #                 entityMap = {}
-    #         else:
-    #             entityMap["value"] = str(data["value"])
-    #             entityMap["name"] = data["entity"]
-    #             if "synonym" in data:
-    #                 entityMap["synonym"] = data["synonym"]
-    #             entityArray.append(entityMap)
-    #             entityMap = {}
-    #
-    #     return entityArray
 
     @app.put("/model")
     @requires_auth(app, auth_token)
@@ -1294,3 +1267,4 @@ def _get_output_channel(
         matching_channels,
         CollectingOutputChannel(),
     )
+
