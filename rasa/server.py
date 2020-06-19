@@ -934,7 +934,8 @@ def create_app(
                                          "person": "sauthor", "filterphrase": "filterphrase",
                                          "mtype": "mtype", "language": "lang", "lang": "lang",
                                          "type": "type", "renew": "renew", "renewAll": "renewAll",
-                                         "pubyear": "pubyear", "PERSON": "sauthor", "checkedout": "checkedout","library":"library","reserve":"reserve"})
+                                         "pubyear": "pubyear", "PERSON": "sauthor", "checkedout": "checkedout",
+                                         "library": "library", "reserve": "reserve"})
             if intent == "search_title":
                 resultMap['type'] = 'title'
             elif intent == "search_author":
@@ -988,13 +989,13 @@ def create_app(
             entityMapping = defaultdict(lambda: "unDefined",
                                         {"library": "library", "libname": "library", "lang": "language",
                                          "category": "category", "weekend": "weekend", "audience": "audience",
-                                         "language": "language","location":"location"})
+                                         "language": "language", "location": "location"})
             if 'day' in contentMap:
                 tz = pytz.timezone(timezone)
                 if contentMap['day'] == "tomorrow":
-                    tz = datetime.now(tz) + timedelta(days=1)
+                    tz = datetime.datetime.now(tz) + timedelta(days=1)
                 else:
-                    tz = datetime.now(tz)
+                    tz = datetime.datetime.now(tz)
                 resultMap["edate"] = str(tz).split(' ')[0]
             for data in entMap:
                 if data["entity"] == "person":
@@ -1020,22 +1021,27 @@ def create_app(
                 if data["entity"] == "time":
                     tempMap = {}
                     if 'from' in data['value']:
-                        data['value'] = data['value'].replace("\'", "\"", -1)
-                        datamap = json.loads(data['value'])
-                        fromDate = datamap['from'].split("T")
+                        frmDate = data['value']
+                        fromDate = frmDate["from"].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
-                                "weekend" in contentMap) and today.weekday() == 0:
+                                "weekend" in contentMap):
                             tempMap['value'] = datetime.datetime.strptime(fromDate[0], '%Y-%m-%d').date()
-                            resultMap["from"] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                            resultMap["from"] = (tempMap['value'] + datetime.timedelta(days=8)).strftime('%Y-%m-%d')
+                        elif 'weekend' in contentMap:
+                            resultMap["from"] = datetime.datetime.strptime(fromDate[0], '%Y-%m-%d')
+                            resultMap["from"] = (resultMap["from"] + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
                         else:
-                            resultMap["from"] = fromDate[0]
-                        todate = datamap['to'].split("T")
+                            resultMap["from"] = resultMap["from"]
+                        todate = frmDate["to"].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
-                                "weekend" in contentMap) and today.weekday() == 0:
+                                "weekend" in contentMap):
                             tempMap['value'] = datetime.datetime.strptime(todate[0], '%Y-%m-%d').date()
-                            resultMap['to'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                            resultMap['to'] = (tempMap['value'] + datetime.timedelta(days=6)).strftime('%Y-%m-%d')
+                        elif 'weekend' in contentMap:
+                            resultMap["to"] = datetime.datetime.strptime(todate[0], '%Y-%m-%d')
+                            resultMap["to"] = (resultMap["to"] + datetime.timedelta(days=-1)).strftime('%Y-%m-%d')
                         else:
                             resultMap['to'] = todate[0]
                     else:
@@ -1044,9 +1050,9 @@ def create_app(
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
                                 "weekend" in contentMap) and today.weekday() == 0:
                             tempMap['value'] = datetime.datetime.strptime(date[0], '%Y-%m-%d').date()
-                            resultMap["to"] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                            resultMap["edate"] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
-                            resultMap["to"] = date[0]
+                            resultMap["edate"] = date[0]
                 elif data["entity"] == "subject" or data["entity"] == "title" or data["entity"] == "program":
                     if 'on' in utterence:
                         resultMap['program'] = data["value"]
@@ -1055,7 +1061,6 @@ def create_app(
                 else:
                     resultMap[entityMapping[data['entity']]] = data['value']
         elif intent == "libraryinfointent":
-            contentMap = {}
             entityMapping = defaultdict(lambda: "unDefined",
                                         {"library": "libname", "libname": "libname", "lang": "language",
                                          "category": "category", "weekend": "weekend",
@@ -1063,9 +1068,9 @@ def create_app(
             if 'day' in contentMap:
                 tz = pytz.timezone(timezone)
                 if contentMap['day'] == "tomorrow":
-                    tz = datetime.now(tz) + timedelta(days=1)
+                    tz = datetime.datetime.now(tz) + timedelta(days=1)
                 else:
-                    tz = datetime.now(tz)
+                    tz = datetime.datetime.now(tz)
                 resultMap["hdate"] = str(tz).split(' ')[0]
             for data in entMap:
                 if data['entity'] == 'currently':
@@ -1073,22 +1078,27 @@ def create_app(
                 elif data["entity"] == "time":
                     tempMap = {}
                     if 'from' in data['value']:
-                        data['value'] = data['value'].replace("\'", "\"", -1)
-                        datamap = json.loads(data['value'])
-                        fromDate = datamap['from'].split("T")
+                        frmDate = data['value']
+                        fromDate = frmDate["from"].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
-                                "weekend" in contentMap) and today.weekday() == 0:
+                                "weekend" in contentMap):
                             tempMap['value'] = datetime.datetime.strptime(fromDate[0], '%Y-%m-%d').date()
-                            resultMap["from"] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                            resultMap["from"] = (tempMap['value'] + datetime.timedelta(days=8)).strftime('%Y-%m-%d')
+                        elif 'weekend' in contentMap:
+                            resultMap["from"] = datetime.datetime.strptime(fromDate[0], '%Y-%m-%d')
+                            resultMap["from"] = (resultMap["from"] + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
                         else:
-                            resultMap["from"] = fromDate[0]
-                        todate = datamap['to'].split("T")
+                            resultMap["from"] = resultMap["from"]
+                        todate = frmDate["to"].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
-                                "weekend" in contentMap) and today.weekday() == 0:
+                                "weekend" in contentMap):
                             tempMap['value'] = datetime.datetime.strptime(todate[0], '%Y-%m-%d').date()
-                            resultMap['to'] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                            resultMap['to'] = (tempMap['value'] + datetime.timedelta(days=6)).strftime('%Y-%m-%d')
+                        elif 'weekend' in contentMap:
+                            resultMap["to"] = datetime.datetime.strptime(todate[0], '%Y-%m-%d')
+                            resultMap["to"] = (resultMap["to"] + datetime.timedelta(days=-1)).strftime('%Y-%m-%d')
                         else:
                             resultMap['to'] = todate[0]
                     else:
@@ -1097,9 +1107,9 @@ def create_app(
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
                                 "weekend" in contentMap) and today.weekday() == 0:
                             tempMap['value'] = datetime.datetime.strptime(date[0], '%Y-%m-%d').date()
-                            resultMap["to"] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+                            resultMap["hdate"] = (tempMap['value'] + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
                         else:
-                            resultMap["to"] = date[0]
+                            resultMap["hdate"] = date[0]
                 elif data['entity'] == 'address':
                     resultMap["libinfofilter"] = "address"
                 elif data['entity'] == 'contact':
