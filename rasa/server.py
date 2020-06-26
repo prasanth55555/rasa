@@ -849,6 +849,8 @@ def create_app(
                 response_data['didYouMean'] = False
                 response_data['intent'] = response_data['intent']['name'] if response_data['intent']['name'] != "SeriesIntent" and response_data['intent']['name'] != "search_title" and response_data['intent']['name'] != "search_subject" and response_data['intent']['name'] != "search_author" and response_data['intent']['name'] != "searchSubject" else "SearchIntent"
                 response_data['reqtype'] = respFinder(response_data['intent'])
+                if str.lower(response_data['intent']) == "searchintent" and len(response_data['slotvalues']) == 0:
+                    response_data['slotvalues'] = resetSlot(response_data['text'])
             else:
                 response_data['intent'] = response_data['intent']['name'] if response_data['intent'][
                                                                                  'name'] != "SeriesIntent" and \
@@ -885,6 +887,17 @@ def create_app(
             return 'SessionEndedRequest'
         else:
             return 'IntentRequest'
+
+    def resetSlot(text):
+        arr = list()
+        keyWords = ["search","find","book","item","title","  "]
+        for item in keyWords:
+            text = str.replace(text , item, "")
+        data = {}
+        data['name'] = 'subject'
+        data['value'] = text
+        arr.append(data)
+        return  arr
 
     def didYouMean(entity):
         entityArray = []
@@ -935,7 +948,7 @@ def create_app(
                                          "mtype": "mtype", "language": "lang", "lang": "lang",
                                          "type": "type", "renew": "renew", "renewAll": "renewAll",
                                          "pubyear": "pubyear", "PERSON": "sauthor", "checkedout": "checkedout",
-                                         "library": "library", "reserve": "reserve"})
+                                         "library": "library", "reserve": "reserve","ORG":"stitle","FAC":"stitle"})
             if intent == "search_title":
                 resultMap['type'] = 'title'
             elif intent == "search_author":
@@ -961,9 +974,14 @@ def create_app(
                                         {"ordinal": "option", "cardinal": "option", "number": "option"})
             for data in entMap:
                 resultMap[entityMapping[data['entity']]] = data['value']
-        elif intent == "switchpatronintent" or intent == "librarynameintent":
+        elif intent == "librarynameintent":
             entityMapping = defaultdict(lambda: "unDefined",
-                                        {"person": "patronname", "PERSON": "patronname", "library": "libname"})
+                                        {"library": "libname"})
+            for data in entMap:
+                resultMap[entityMapping[data['entity']]] = data['value']
+        elif intent == "switchpatronintent":
+            entityMapping = defaultdict(lambda: "unDefined",
+                                        {"person": "patronname", "PERSON": "patronname"})
             for data in entMap:
                 resultMap[entityMapping[data['entity']]] = data['value']
         elif intent == "updateholdintent":
@@ -1122,6 +1140,8 @@ def create_app(
 
     def FormStruct(resultMap):
         Array = list()
+        if "sauthor" in resultMap and "stitle" in resultMap and "filterphrase" in resultMap and resultMap["sauthor"] == resultMap["stitle"] and resultMap["filterphrase"] == resultMap["stitle"]:
+            del resultMap["sauthor"], resultMap["filterphrase"]
         if "sauthor" in resultMap and "stitle" in resultMap and resultMap["sauthor"] == resultMap["stitle"]:
             del resultMap["sauthor"]
         if "stitle" in resultMap and "subject" in resultMap and resultMap["stitle"] == resultMap["subject"]:
@@ -1277,4 +1297,3 @@ def _get_output_channel(
         matching_channels,
         CollectingOutputChannel(),
     )
-
