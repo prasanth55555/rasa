@@ -1146,10 +1146,10 @@ def create_app(
             del resultMap["sauthor"]
         if "stitle" in resultMap and "subject" in resultMap and resultMap["stitle"] == resultMap["subject"]:
             del resultMap["stitle"]
-	if "sauthor" in resultMap and "filterphrase" in resultMap and resultMap["sauthor"] == resultMap["filterphrase"]:
-	    del resultMap["filterphrase"]
+        if "sauthor" in resultMap and "filterphrase" in resultMap and resultMap["sauthor"] == resultMap["filterphrase"]:
+            del resultMap["filterphrase"]
         if "stitle" in resultMap and "filterphrase" in resultMap and resultMap["stitle"] == resultMap["filterphrase"]:
-	    del resultMap["filterphrase"]
+            del resultMap["filterphrase"]
         for doc in resultMap:
             if doc != "unDefined":
                 eachDoc = {}
