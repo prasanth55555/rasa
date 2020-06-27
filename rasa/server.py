@@ -894,7 +894,7 @@ def create_app(
         for item in keyWords:
             text = str.replace(text , item, "")
         data = {}
-        data['name'] = 'subject'
+        data['name'] = 'stitle'
         data['value'] = text
         arr.append(data)
         return  arr
