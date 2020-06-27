@@ -1152,6 +1152,8 @@ def create_app(
             del resultMap["filterphrase"]
         elif "sauthor" in resultMap and "library" in resultMap and resultMap["sauthor"] == resultMap["library"]:
             del resultMap["library"]
+        if "sauthor" in resultMap :
+            resultMap["sauthor"] = resultMap["sauthor"].title()
         for doc in resultMap:
             if doc != "unDefined":
                 eachDoc = {}
