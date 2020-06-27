@@ -1142,13 +1142,13 @@ def create_app(
         Array = list()
         if "sauthor" in resultMap and "stitle" in resultMap and "filterphrase" in resultMap and resultMap["sauthor"] == resultMap["stitle"] and resultMap["filterphrase"] == resultMap["stitle"]:
             del resultMap["sauthor"], resultMap["filterphrase"]
-        elif "sauthor" in resultMap and "stitle" in resultMap and resultMap["sauthor"] == resultMap["stitle"]:
+        if "sauthor" in resultMap and "stitle" in resultMap and resultMap["sauthor"] == resultMap["stitle"]:
             del resultMap["sauthor"]
-        elif "stitle" in resultMap and "subject" in resultMap and resultMap["stitle"] == resultMap["subject"]:
+        if "stitle" in resultMap and "subject" in resultMap and resultMap["stitle"] == resultMap["subject"]:
             del resultMap["stitle"]
-	elif "sauthor" in resultMap and "filterphrase" in resultMap and resultMap["sauthor"] == resultMap["filterphrase"]:
+	if "sauthor" in resultMap and "filterphrase" in resultMap and resultMap["sauthor"] == resultMap["filterphrase"]:
 	    del resultMap["filterphrase"]
-        elif "stitle" in resultMap and "filterphrase" in resultMap and resultMap["stitle"] == resultMap["filterphrase"]:
+        if "stitle" in resultMap and "filterphrase" in resultMap and resultMap["stitle"] == resultMap["filterphrase"]:
 	    del resultMap["filterphrase"]
         for doc in resultMap:
             if doc != "unDefined":
