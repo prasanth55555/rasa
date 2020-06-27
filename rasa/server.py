@@ -1154,6 +1154,8 @@ def create_app(
             del resultMap["library"]
         if "sauthor" in resultMap :
             resultMap["sauthor"] = resultMap["sauthor"].title()
+        if "stitle" in resultMap :
+            resultMap["stitle"] = resultMap["stitle"].title()
         for doc in resultMap:
             if doc != "unDefined":
                 eachDoc = {}
