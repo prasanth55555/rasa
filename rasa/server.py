@@ -890,13 +890,14 @@ def create_app(
 
     def resetSlot(text):
         arr = list()
-        keyWords = ["search","find","book","item","title","  "]
+        keyWords = ["search","find","book","item","title","can","you","for","an"]
         for item in keyWords:
             text = str.replace(text , item, "")
-        data = {}
-        data['name'] = 'stitle'
-        data['value'] = text
-        arr.append(data)
+        if len(text) > 0:
+            data = {}
+            data['name'] = 'stitle'
+            data['value'] = text.replace("  ", " ")
+            arr.append(data)
         return  arr
 
     def didYouMean(entity):
