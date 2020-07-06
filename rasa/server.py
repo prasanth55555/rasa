@@ -950,7 +950,7 @@ def create_app(
                                          "mtype": "mtype", "language": "lang", "lang": "lang",
                                          "type": "type", "renew": "renew", "renewAll": "renewAll",
                                          "pubyear": "pubyear", "PERSON": "sauthor", "checkedout": "checkedout",
-                                         "library": "library", "reserve": "reserve","ORG":"stitle","FAC":"stitle"})
+                                         "library": "library", "reserve": "reserve", "ORG": "stitle", "FAC": "stitle"})
             if intent == "search_title":
                 resultMap['type'] = 'title'
             elif intent == "search_author":
@@ -1052,7 +1052,7 @@ def create_app(
                             resultMap["from"] = datetime.datetime.strptime(fromDate[0], '%Y-%m-%d')
                             resultMap["from"] = (resultMap["from"] + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
                         else:
-                            resultMap["from"] = resultMap["from"]
+                            resultMap["from"] = data["value"]["from"].split("T")[0]
                         todate = frmDate["to"].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
@@ -1063,7 +1063,7 @@ def create_app(
                             resultMap["to"] = datetime.datetime.strptime(todate[0], '%Y-%m-%d')
                             resultMap["to"] = (resultMap["to"] + datetime.timedelta(days=-1)).strftime('%Y-%m-%d')
                         else:
-                            resultMap['to'] = todate[0]
+                            resultMap['to'] = data["value"]["to"].split("T")[0]
                     else:
                         date = data["value"].split("T")
                         if 'timeline' in contentMap and (
@@ -1109,7 +1109,7 @@ def create_app(
                             resultMap["from"] = datetime.datetime.strptime(fromDate[0], '%Y-%m-%d')
                             resultMap["from"] = (resultMap["from"] + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
                         else:
-                            resultMap["from"] = resultMap["from"]
+                            resultMap["from"] = data["value"]["from"].split("T")[0]
                         todate = frmDate["to"].split("T")
                         if 'timeline' in contentMap and (
                                 contentMap['timeline'] == "future" or contentMap['timeline'] == "next") and (
@@ -1120,7 +1120,7 @@ def create_app(
                             resultMap["to"] = datetime.datetime.strptime(todate[0], '%Y-%m-%d')
                             resultMap["to"] = (resultMap["to"] + datetime.timedelta(days=-1)).strftime('%Y-%m-%d')
                         else:
-                            resultMap['to'] = todate[0]
+                            resultMap['to'] = data["value"]["to"].split("T")[0]
                     else:
                         date = data["value"].split("T")
                         if 'timeline' in contentMap and (
