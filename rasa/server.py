@@ -1007,7 +1007,7 @@ def create_app(
                     resultMap[entityMapping[data['entity']]] = data['value']
         elif intent == "eventintent":
             entityMapping = defaultdict(lambda: "unDefined",
-                                        {"library": "library", "libname": "library", "lang": "language",
+                                        {"library": "library", "GPE":"library","libname": "library", "lang": "language",
                                          "category": "category", "weekend": "weekend", "audience": "audience",
                                          "language": "language", "location": "location"})
             if 'day' in contentMap:
@@ -1084,7 +1084,7 @@ def create_app(
             entityMapping = defaultdict(lambda: "unDefined",
                                         {"library": "libname", "libname": "libname", "lang": "language",
                                          "category": "category", "weekend": "weekend",
-                                         "libinfofilter": "libinfofilter"})
+                                         "libinfofilter": "libinfofilter","GPE":"libname"})
             if 'day' in contentMap:
                 tz = pytz.timezone(timezone)
                 if contentMap['day'] == "tomorrow":
@@ -1145,6 +1145,8 @@ def create_app(
         if "sauthor" in resultMap and "stitle" in resultMap and "filterphrase" in resultMap and resultMap["sauthor"] == resultMap["stitle"] and resultMap["filterphrase"] == resultMap["stitle"]:
             del resultMap["sauthor"], resultMap["filterphrase"]
         elif "sauthor" in resultMap and "stitle" in resultMap and resultMap["sauthor"] == resultMap["stitle"]:
+            del resultMap["sauthor"]
+        elif "sauthor" in resultMap and "sseries" in resultMap and resultMap["sauthor"] == resultMap["sseries"]:
             del resultMap["sauthor"]
         elif "stitle" in resultMap and "subject" in resultMap and resultMap["stitle"] == resultMap["subject"]:
             del resultMap["stitle"]
