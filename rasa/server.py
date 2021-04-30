@@ -1009,11 +1009,12 @@ def create_app(
             entityMapping = defaultdict(lambda: "unDefined",
                                         {"library": "library", "GPE":"library","libname": "library", "lang": "language",
                                          "category": "category", "weekend": "weekend", "audience": "audience",
-                                         "language": "language", "location": "location"})
+                                         "language": "language", "location": "location","day":"day"})
             if 'day' in contentMap:
                 tz = pytz.timezone(timezone)
                 if contentMap['day'] == "tomorrow":
                     tz = datetime.datetime.now(tz) + timedelta(days=1)
+                    resultMap["day"] = "day"
                 else:
                     tz = datetime.datetime.now(tz)
                 resultMap["edate"] = str(tz).split(' ')[0]
