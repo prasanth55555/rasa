@@ -931,7 +931,7 @@ def create_app(
         return entityArray
 
     def entityMapper(entMap, intent, utterence, timezone):
-        today = datetime.date.today()
+        today = ""
         intent = intent.lower()
         contentMap = {}
         resultMap = {}
